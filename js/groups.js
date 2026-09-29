@@ -8,13 +8,26 @@ window.App = window.App || {};
 window.App.renderGroups = function() {
   const groups = window.App.state.groups || [];
   const list = document.getElementById('groups-list');
-  
+
   if (groups.length === 0) {
     list.innerHTML = '<p class="empty-state">No hay grupos creados. Crea uno con el botón "+".</p>';
     return;
   }
-  
-  const sorted = [...groups].sort((a, b) => a.name.localeCompare(b.name));
+
+  const filter = document.getElementById('group-filter-active')?.value || 'active';
+  let filtered = groups;
+  if (filter === 'active') {
+    filtered = groups.filter(g => g.active !== false);
+  } else if (filter === 'inactive') {
+    filtered = groups.filter(g => g.active === false);
+  }
+
+  if (filtered.length === 0) {
+    list.innerHTML = '<p class="empty-state">No hay grupos que coincidan con el filtro.</p>';
+    return;
+  }
+
+  const sorted = [...filtered].sort((a, b) => a.name.localeCompare(b.name));
   list.innerHTML = sorted.map(g => window.App.buildGroupCard(g)).join('');
 };
 
@@ -235,6 +248,11 @@ window.App.initGroupEvents = function() {
   const search = document.getElementById('group-students-search');
   if (search) {
     search.addEventListener('input', () => window.App.filterGroupStudentsPicker(search.value));
+  }
+
+  const filterActive = document.getElementById('group-filter-active');
+  if (filterActive) {
+    filterActive.addEventListener('change', window.App.renderGroups);
   }
 };
 
