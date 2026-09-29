@@ -39,7 +39,11 @@ window.App.buildGroupCard = function(g) {
   }).slice(0, 3);
   
   const moreStudents = studentCount > 3 ? ` +${studentCount - 3} más` : '';
-  const feeStr = g.fee != null ? `${parseFloat(g.fee).toFixed(2).replace('.', ',')} €/alumno` : 'Sin tarifa';
+  const isMonthly = g.billingMode === 'monthly';
+  const linkedCourse = isMonthly ? window.App.state.courses.find(c => c.id === g.courseId) : null;
+  const feeStr = isMonthly
+    ? (linkedCourse ? `${window.App.fmtCurrency(linkedCourse.monthlyFeeNormal || 0)}/mes · ${window.App.fmtCurrency(linkedCourse.monthlyFeeSecondSubject || 0)}/mes 2ª asig.` : 'Sin curso vinculado')
+    : (g.fee != null ? `${parseFloat(g.fee).toFixed(2).replace('.', ',')} €/alumno` : 'Sin tarifa');
   const isActive = g.active !== false; // Default to active if not set
   
   return `
@@ -84,11 +88,27 @@ window.App.openNewGroup = function() {
   document.getElementById('group-name').value = '';
   document.getElementById('group-description').value = '';
   document.getElementById('group-fee').value = '';
+  document.getElementById('group-billing-mode').value = 'perClass';
+  populateGroupCourseSelect('');
+  window.App.toggleGroupMonthlyFeeField();
   document.getElementById('group-active').checked = true;
   const search = document.getElementById('group-students-search');
   if (search) search.value = '';
   window.App.buildGroupStudentsPicker([]);
   window.App.openModal('modal-group');
+};
+
+function populateGroupCourseSelect(selectedCourseId) {
+  const sel = document.getElementById('group-course');
+  const sorted = window.App.state.courses.slice().sort((a, b) => a.name.localeCompare(b.name));
+  sel.innerHTML = '<option value="">– Selecciona un curso –</option>' +
+    sorted.map(c => `<option value="${c.id}" ${c.id === selectedCourseId ? 'selected' : ''}>${window.App.escHtml(c.name)}</option>`).join('');
+}
+
+window.App.toggleGroupMonthlyFeeField = function() {
+  const mode = document.getElementById('group-billing-mode')?.value;
+  const wrap = document.getElementById('group-monthly-fee-wrap');
+  if (wrap) wrap.classList.toggle('hidden', mode !== 'monthly');
 };
 
 window.App.openEditGroup = function(groupId) {
@@ -100,6 +120,9 @@ window.App.openEditGroup = function(groupId) {
   document.getElementById('group-name').value = g.name;
   document.getElementById('group-description').value = g.description || '';
   document.getElementById('group-fee').value = g.fee != null ? g.fee : '';
+  document.getElementById('group-billing-mode').value = g.billingMode === 'monthly' ? 'monthly' : 'perClass';
+  populateGroupCourseSelect(g.courseId || '');
+  window.App.toggleGroupMonthlyFeeField();
   document.getElementById('group-active').checked = g.active !== false;
   const search = document.getElementById('group-students-search');
   if (search) search.value = '';
@@ -114,6 +137,8 @@ window.App.saveGroup = function(e) {
   const name = document.getElementById('group-name').value.trim();
   const description = document.getElementById('group-description').value.trim();
   const fee = parseFloat(document.getElementById('group-fee').value);
+  const billingMode = document.getElementById('group-billing-mode').value === 'monthly' ? 'monthly' : 'perClass';
+  const courseId = document.getElementById('group-course').value || null;
   const active = document.getElementById('group-active').checked;
   
   if (!name) {
@@ -122,6 +147,10 @@ window.App.saveGroup = function(e) {
   }
   if (isNaN(fee) || fee < 0) {
     window.App.showToast('La tarifa debe ser un número positivo', 'error');
+    return;
+  }
+  if (billingMode === 'monthly' && !courseId) {
+    window.App.showToast('Selecciona el curso vinculado para la cuota mensual', 'error');
     return;
   }
   
@@ -134,6 +163,8 @@ window.App.saveGroup = function(e) {
       g.name = name;
       g.description = description;
       g.fee = fee;
+      g.billingMode = billingMode;
+      g.courseId = billingMode === 'monthly' ? courseId : null;
       g.active = active;
       g.studentIds = selectedStudents;
       window.App.showToast('Grupo actualizado', 'success');
@@ -145,6 +176,8 @@ window.App.saveGroup = function(e) {
       name,
       description,
       fee,
+      billingMode,
+      courseId: billingMode === 'monthly' ? courseId : null,
       active,
       studentIds: selectedStudents,
     });
@@ -253,6 +286,11 @@ window.App.initGroupEvents = function() {
   const filterActive = document.getElementById('group-filter-active');
   if (filterActive) {
     filterActive.addEventListener('change', window.App.renderGroups);
+  }
+
+  const billingMode = document.getElementById('group-billing-mode');
+  if (billingMode) {
+    billingMode.addEventListener('change', window.App.toggleGroupMonthlyFeeField);
   }
 };
 

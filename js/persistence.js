@@ -63,9 +63,18 @@ window.App.loadState = function() {
   if (!window.App.state.settings.githubToken)    window.App.state.settings.githubToken    = '';
   if (!window.App.state.settings.githubGistUrl)  window.App.state.settings.githubGistUrl  = '';
   if (!Array.isArray(window.App.state.groups))   window.App.state.groups = [];
+  window.App.state.groups.forEach(g => {
+    if (!g.billingMode) g.billingMode = 'perClass';
+    if (g.courseId === undefined) g.courseId = null;
+  });
   if (!window.App.state.receiptCounter) window.App.state.receiptCounter = 0;
   if (!window.App.state.lastModified)   window.App.state.lastModified   = null;
-  window.App.state.students.forEach(s => { if (!Array.isArray(s.receipts)) s.receipts = []; });
+  window.App.state.students.forEach(s => {
+    if (!Array.isArray(s.receipts)) s.receipts = [];
+    // backward-compat: migrate single "course" field into "courses" array
+    if (!Array.isArray(s.courses)) s.courses = s.course ? [s.course] : [];
+    if (s.primaryCourse === undefined) s.primaryCourse = s.courses[0] || '';
+  });
 };
 
 // Export data as JSON file

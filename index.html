@@ -279,10 +279,14 @@
           <input type="tel" id="student-phone" placeholder="6XX XXX XXX" />
         </div>
         <div class="form-group">
-          <label for="student-course">Curso</label>
-          <select id="student-course">
-            <option value="">– Sin curso –</option>
-          </select>
+          <label for="student-courses">Cursos</label>
+          <select id="student-courses" multiple size="4"></select>
+          <p class="form-hint">Mantén pulsado Ctrl (o Cmd) para seleccionar varios cursos.</p>
+        </div>
+        <div class="form-group" id="student-primary-course-wrap">
+          <label for="student-primary-course">Curso principal (tarifa normal)</label>
+          <select id="student-primary-course"></select>
+          <p class="form-hint">Los demás cursos con cuota mensual se facturan a la tarifa de 2ª asignatura.</p>
         </div>
         <div class="form-group">
           <label for="student-balance">Saldo pendiente (€)</label>
@@ -339,6 +343,16 @@
         <div class="form-group">
           <label for="class-fee">Cuota por alumno (€) *</label>
           <input type="number" id="class-fee" required step="0.01" min="0" placeholder="0.00" />
+        </div>
+        <div id="class-repeat-selector" class="form-group">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="class-repeat-weekly" style="width:auto;" />
+            Repetir todas las semanas
+          </label>
+          <div id="class-repeat-until-wrap" class="hidden" style="margin-top:8px">
+            <label for="class-repeat-until">Repetir hasta *</label>
+            <input type="date" id="class-repeat-until" />
+          </div>
         </div>
         <div id="class-students-selector" class="form-group">
           <label>Alumnos *</label>
@@ -402,6 +416,17 @@
           <label for="course-description">Descripción</label>
           <input type="text" id="course-description" placeholder="Opcional" />
         </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="form-group">
+            <label for="course-monthly-fee-normal">Cuota mensual normal (€)</label>
+            <input type="number" id="course-monthly-fee-normal" step="0.01" min="0" placeholder="0.00" />
+          </div>
+          <div class="form-group">
+            <label for="course-monthly-fee-second">Cuota mensual 2ª asignatura (€)</label>
+            <input type="number" id="course-monthly-fee-second" step="0.01" min="0" placeholder="0.00" />
+          </div>
+        </div>
+        <p class="form-hint">Se usan cuando un grupo de este curso cobra cuota mensual. La tarifa "2ª asignatura" se aplica si el alumno tiene otro curso principal.</p>
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" data-modal="modal-course">Cancelar</button>
           <button type="submit" class="btn btn-primary">Guardar</button>
@@ -429,8 +454,22 @@
           <input type="text" id="group-description" placeholder="Opcional" />
         </div>
         <div class="form-group">
-          <label for="group-fee">Tarifa por alumno (€) *</label>
+          <label for="group-fee">Tarifa por alumno y clase (€) *</label>
           <input type="number" id="group-fee" required step="0.01" min="0" placeholder="0.00" />
+        </div>
+        <div class="form-group">
+          <label for="group-billing-mode">Forma de cobro</label>
+          <select id="group-billing-mode">
+            <option value="perClass">Por clase</option>
+            <option value="monthly">Cuota mensual</option>
+          </select>
+        </div>
+        <div class="form-group hidden" id="group-monthly-fee-wrap">
+          <label for="group-course">Curso vinculado (cuota mensual) *</label>
+          <select id="group-course">
+            <option value="">– Selecciona un curso –</option>
+          </select>
+          <p class="form-hint">La cuota mensual (normal / 2ª asignatura) se define en el curso.</p>
         </div>
         <div class="form-group">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">

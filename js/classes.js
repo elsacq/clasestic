@@ -8,6 +8,13 @@ window.App = window.App || {};
 // Track if user manually edited the fee in the current modal
 let userEditedFee = false;
 
+// Add N days to a "YYYY-MM-DD" date string, returning the same format
+function addDays(dateStr, days) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return window.App.formatDateStr(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
 // Get duration multiplier for fee calculation
 function getDurationMultiplier(duration) {
   const durationNum = parseInt(duration);
@@ -39,6 +46,20 @@ function updateFeeForDuration() {
   
   const adjustedFee = baseFee * multiplier;
   document.getElementById('class-fee').value = adjustedFee.toFixed(2);
+}
+
+// Show and reset the "repeat weekly" option (only offered when creating a new class)
+function resetRepeatWeeklyOption() {
+  const selector = document.getElementById('class-repeat-selector');
+  const checkbox = document.getElementById('class-repeat-weekly');
+  selector.classList.remove('hidden');
+  checkbox.checked = false;
+  document.getElementById('class-repeat-until').value = '';
+  document.getElementById('class-repeat-until-wrap').classList.add('hidden');
+}
+
+function hideRepeatWeeklyOption() {
+  document.getElementById('class-repeat-selector').classList.add('hidden');
 }
 
 window.App.renderClasses = function() {
@@ -172,6 +193,7 @@ window.App.openNewClass = function(prefillDate, lockedStudentId) {
   populateGroupSelect('');
   buildStudentsPicker(lockedStudentId ? [lockedStudentId] : []);
   updateClassTypeUI('individual');
+  resetRepeatWeeklyOption();
   
   // Add listener for date changes
   dateInput.onchange = function() {
@@ -228,6 +250,7 @@ window.App.openNewClassFromGroup = function(groupId) {
   populateGroupSelect(groupId);
   buildStudentsPicker(g.studentIds || []);
   updateClassTypeUI('grupal');
+  resetRepeatWeeklyOption();
 
   dateInput.onchange = function() {
     const selectedDate = this.value;
@@ -281,6 +304,7 @@ window.App.openEditClass = function(classId) {
   populateGroupSelect(c.groupId || '');
   buildStudentsPicker(c.studentIds);
   updateClassTypeUI(c.type);
+  hideRepeatWeeklyOption();
   
   // Add listener for date changes
   dateInput.onchange = function() {
@@ -408,10 +432,11 @@ function updateClassTypeUI(type) {
 function populateGroupSelect(selectedValue) {
   const select = document.getElementById('class-group');
   const groups = window.App.state.groups || [];
-  const sorted = [...groups].sort((a, b) => a.name.localeCompare(b.name));
+  const visible = groups.filter(g => g.active !== false || g.id === selectedValue);
+  const sorted = [...visible].sort((a, b) => a.name.localeCompare(b.name));
   
   select.innerHTML = '<option value="">– Seleccionar grupo –</option>' +
-    sorted.map(g => `<option value="${g.id}" ${g.id === selectedValue ? 'selected' : ''}>${window.App.escHtml(g.name)}</option>`).join('');
+    sorted.map(g => `<option value="${g.id}" ${g.id === selectedValue ? 'selected' : ''}>${window.App.escHtml(g.name)}${g.active === false ? ' (inactivo)' : ''}</option>`).join('');
 }
 
 function onGroupChange(e) {
@@ -453,11 +478,17 @@ window.App.saveClass = function(e) {
   const duration = parseInt(document.getElementById('class-duration').value) || 60;
   const fee    = parseFloat(document.getElementById('class-fee').value);
   const groupId = document.getElementById('class-group').value;
+  const repeatWeekly = !id && document.getElementById('class-repeat-weekly').checked;
+  const repeatUntil  = document.getElementById('class-repeat-until').value;
 
   if (!date || !time) { window.App.showToast('Fecha y hora obligatorias', 'error'); return; }
   if (isNaN(fee) || fee < 0) { window.App.showToast('Cuota inválida', 'error'); return; }
   if (studentIds.length === 0) { window.App.showToast('Selecciona al menos un alumno', 'error'); return; }
   if (type === 'individual' && studentIds.length > 1) { window.App.showToast('Clase individual: solo 1 alumno', 'error'); return; }
+  if (repeatWeekly && (!repeatUntil || repeatUntil <= date)) {
+    window.App.showToast('La fecha de repetición debe ser posterior a la fecha de la clase', 'error');
+    return;
+  }
 
   // Check for time conflict (same date+time, different id)
   const conflict = window.App.state.classes.find(c => c.date === date && c.time === time && c.id !== id);
@@ -466,6 +497,8 @@ window.App.saveClass = function(e) {
     window.App.showToast(`Conflicto: ya hay una clase ${label} a las ${time}`, 'error');
     return;
   }
+
+  const createdIds = [];
 
   if (id) {
     // Editing existing class
@@ -478,26 +511,48 @@ window.App.saveClass = function(e) {
     // New class (balance is calculated dynamically, no need to adjust)
     const newId = window.App.uid();
     window.App.state.classes.push({ id: newId, type, date, time, duration, fee, studentIds, groupId: groupId || null });
+    createdIds.push(newId);
+
+    if (repeatWeekly) {
+      let skipped = 0;
+      let nextDate = addDays(date, 7);
+      while (nextDate <= repeatUntil) {
+        const hasConflict = window.App.state.classes.some(c => c.date === nextDate && c.time === time);
+        if (hasConflict) {
+          skipped++;
+        } else {
+          const repeatId = window.App.uid();
+          window.App.state.classes.push({ id: repeatId, type, date: nextDate, time, duration, fee, studentIds, groupId: groupId || null });
+          createdIds.push(repeatId);
+        }
+        nextDate = addDays(nextDate, 7);
+      }
+      if (skipped > 0) {
+        window.App.showToast(`${skipped} repetición(es) omitida(s) por conflicto de horario`, 'info');
+      }
+    }
   }
 
   window.App.saveState();
   window.App.closeModal('modal-class');
   window.App.renderCurrentTab();
-  window.App.showToast(id ? 'Clase actualizada' : 'Clase creada', 'success');
+  window.App.showToast(id ? 'Clase actualizada' : `${createdIds.length > 1 ? createdIds.length + ' clases creadas' : 'Clase creada'}`, 'success');
 
-  // Auto-sync new/updated class to Google Calendar if connected
+  // Auto-sync new/updated class(es) to Google Calendar if connected
   if (window.App.isGCalConnected()) {
-    const savedId = id || window.App.state.classes[window.App.state.classes.length - 1]?.id;
-    const saved   = window.App.state.classes.find(c => c.id === savedId);
-    if (saved) {
-      window.App.upsertGCalEvent(saved).then(eventId => {
-        if (eventId) {
-          saved.gcalEventId = eventId;
-          window.App.saveState();
-          window.App.renderCurrentTab();
-        }
-      });
-    }
+    const idsToSync = id ? [id] : createdIds;
+    idsToSync.forEach(classId => {
+      const saved = window.App.state.classes.find(c => c.id === classId);
+      if (saved) {
+        window.App.upsertGCalEvent(saved).then(eventId => {
+          if (eventId) {
+            saved.gcalEventId = eventId;
+            window.App.saveState();
+            window.App.renderCurrentTab();
+          }
+        });
+      }
+    });
   }
 }
 
@@ -506,10 +561,18 @@ window.App.openClassDetail = function(classId) {
   if (!c) return;
   window.App.setDetailClassId(classId);
 
-  const studentChips = c.studentIds.map(id => {
-    const s = window.App.state.students.find(s => s.id === id);
-    return `<span class="detail-student-chip">${s ? window.App.escHtml(s.name) : 'Alumno eliminado'}</span>`;
-  }).join('');
+  const studentChips = c.type === 'grupal'
+    ? c.studentIds.map(id => {
+        const s = window.App.state.students.find(s => s.id === id);
+        const attended = !c.attendance || c.attendance[id] !== false;
+        return `<button type="button" class="detail-student-chip attendance-chip ${attended ? 'present' : 'absent'}" onclick="window.App.toggleClassAttendance('${c.id}','${id}')" title="Marcar ${attended ? 'ausente' : 'asistió'}">
+          ${attended ? '✓' : '✕'} ${s ? window.App.escHtml(s.name) : 'Alumno eliminado'}
+        </button>`;
+      }).join('')
+    : c.studentIds.map(id => {
+        const s = window.App.state.students.find(s => s.id === id);
+        return `<span class="detail-student-chip">${s ? window.App.escHtml(s.name) : 'Alumno eliminado'}</span>`;
+      }).join('');
 
   // Format duration display
   const durationText = c.duration ? (() => {
@@ -533,6 +596,17 @@ window.App.openClassDetail = function(classId) {
     <div class="detail-row"><span class="detail-label">Alumnos</span><span class="detail-value">${studentChips}</span></div>
   `;
   window.App.openModal('modal-class-detail');
+}
+
+// Toggle a student's attendance for a group class (defaults to present when unset)
+window.App.toggleClassAttendance = function(classId, studentId) {
+  const c = window.App.state.classes.find(cl => cl.id === classId);
+  if (!c) return;
+  if (!c.attendance) c.attendance = {};
+  const attended = c.attendance[studentId] !== false;
+  c.attendance[studentId] = !attended;
+  window.App.saveState();
+  window.App.openClassDetail(classId);
 }
 
 window.App.deleteClass = function(classId) {
@@ -569,6 +643,9 @@ window.App.initClassEvents = function() {
   document.getElementById('class-filter-date').addEventListener('change', window.App.applyClassFilters);
   document.getElementById('class-filter-type').addEventListener('change', window.App.applyClassFilters);
   document.getElementById('class-filter-future').addEventListener('change', window.App.applyClassFilters);
+  document.getElementById('class-repeat-weekly').addEventListener('change', (e) => {
+    document.getElementById('class-repeat-until-wrap').classList.toggle('hidden', !e.target.checked);
+  });
   
   // Track manual fee edits
   document.getElementById('class-fee').addEventListener('input', () => {

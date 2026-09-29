@@ -9,7 +9,7 @@ window.App.renderStudents = function() {
   // Populate course filter from window.App.state.courses (plus any orphan course names on students)
   const courseNames = [...new Set([
     ...window.App.state.courses.map(c => c.name),
-    ...window.App.state.students.map(s => s.course).filter(Boolean),
+    ...window.App.state.students.flatMap(s => s.courses || (s.course ? [s.course] : [])).filter(Boolean),
   ])].sort();
   const filterEl = document.getElementById('student-filter-course');
   const prevVal = filterEl.value;
@@ -34,7 +34,7 @@ window.App.applyStudentFilters = function() {
 
   let students = window.App.state.students;
   if (query)  students = students.filter(s => s.name.toLowerCase().includes(query) || (s.phone || '').includes(query));
-  if (course) students = students.filter(s => s.course === course);
+  if (course) students = students.filter(s => (s.courses || []).includes(course));
   
   // Filter by group
   if (groupId) {
@@ -77,18 +77,22 @@ window.App.buildStudentCard = function(s) {
   const groupsText = studentGroups.length > 0 
     ? studentGroups.map(g => g.name).join(', ')
     : '–';
+  const coursesText = (s.courses || []).join(', ');
+  const multiCourseBadge = window.App.isMultiCourseStudent(s)
+    ? '<span style="background:#6366f1;color:white;padding:2px 6px;border-radius:4px;font-size:0.7rem;font-weight:600;margin-left:6px;">Multi-curso</span>'
+    : '';
   
   return `
     <div class="student-card" style="${!isActive ? 'opacity:0.6;' : ''}">
       <div style="display:flex;gap:12px;margin-bottom:12px;">
         <div class="student-avatar">${window.App.initials(s.name)}</div>
         <div class="student-info">
-          <div class="student-name">${window.App.escHtml(s.name)}</div>
+          <div class="student-name">${window.App.escHtml(s.name)}${multiCourseBadge}</div>
           <div class="student-meta">
-            ${s.course ? '<strong>Curso:</strong> ' + window.App.escHtml(s.course) : ''}
-            ${s.course && studentGroups.length > 0 ? ' · ' : ''}
+            ${coursesText ? '<strong>Cursos:</strong> ' + window.App.escHtml(coursesText) : ''}
+            ${coursesText && studentGroups.length > 0 ? ' · ' : ''}
             ${studentGroups.length > 0 ? '<strong>Grupos:</strong> ' + window.App.escHtml(groupsText) : ''}
-            ${(s.course || studentGroups.length > 0) && s.phone ? '<br>' : ''}
+            ${(coursesText || studentGroups.length > 0) && s.phone ? '<br>' : ''}
             ${s.phone ? '📱 ' + window.App.escHtml(s.phone) : ''}          ${s.phone && s.createdAt ? '<br>' : ''}
           ${s.createdAt ? '📅 Desde: ' + window.App.fmtDate(s.createdAt) : ''}          </div>
           ${pendingReceipts.length > 0 ? `
@@ -128,7 +132,8 @@ window.App.openNewStudent = function() {
   document.getElementById('student-name').value    = '';
   document.getElementById('student-phone').value   = '';
   document.getElementById('student-balance').value = '0';
-  populateCourseSelect('student-course', '');
+  populateCoursesMultiSelect('student-courses', []);
+  populatePrimaryCourseSelect('');
   window.App.openModal('modal-student');
 }
 
@@ -140,7 +145,8 @@ window.App.openEditStudent = function(studentId) {
   document.getElementById('student-name').value    = s.name;
   document.getElementById('student-phone').value   = s.phone || '';
   document.getElementById('student-balance').value = parseFloat(s.balance) || 0;
-  populateCourseSelect('student-course', s.course || '');
+  populateCoursesMultiSelect('student-courses', s.courses || (s.course ? [s.course] : []));
+  populatePrimaryCourseSelect(s.primaryCourse || '');
   window.App.openModal('modal-student');
 }
 
@@ -149,7 +155,8 @@ window.App.saveStudent = function(e) {
   const id      = document.getElementById('student-id').value;
   const name    = document.getElementById('student-name').value.trim();
   const phone   = document.getElementById('student-phone').value.trim();
-  const course  = document.getElementById('student-course').value;
+  const courses = Array.from(document.getElementById('student-courses').selectedOptions).map(o => o.value);
+  const primaryCourse = document.getElementById('student-primary-course').value || courses[0] || '';
   const balance = parseFloat(document.getElementById('student-balance').value) || 0;
 
   if (!name) {
@@ -159,13 +166,15 @@ window.App.saveStudent = function(e) {
 
   if (id) {
     const s = window.App.state.students.find(s => s.id === id);
-    if (s) { s.name = name; s.phone = phone; s.course = course; s.balance = balance; }
+    if (s) { s.name = name; s.phone = phone; s.courses = courses; s.course = courses[0] || ''; s.primaryCourse = primaryCourse; s.balance = balance; }
   } else {
     window.App.state.students.push({ 
       id: window.App.uid(), 
       name, 
       phone, 
-      course, 
+      courses,
+      course: courses[0] || '',
+      primaryCourse,
       createdAt: window.App.todayStr(), 
       balance,
       receipts: [],
@@ -223,21 +232,42 @@ window.App.toggleStudentActive = function(studentId) {
   );
 }
 
-function populateCourseSelect(selectId, selectedValue) {
+function populateCoursesMultiSelect(selectId, selectedValues) {
   const sel = document.getElementById(selectId);
   const sorted = window.App.state.courses.slice().sort((a, b) => a.name.localeCompare(b.name));
-  sel.innerHTML = `<option value="">– Sin curso –</option>` +
-    sorted.map(c =>
-      `<option value="${window.App.escHtml(c.name)}" ${selectedValue === c.name ? 'selected' : ''}>${window.App.escHtml(c.name)}</option>`
-    ).join('');
-  // If there are orphan course names (old data) not in courses list, add them too
-  if (selectedValue && !sorted.find(c => c.name === selectedValue)) {
-    sel.innerHTML += `<option value="${window.App.escHtml(selectedValue)}" selected>${window.App.escHtml(selectedValue)} (sin lista)</option>`;
-  }
-  if (sorted.length === 0) {
-    sel.innerHTML += `<option value="" disabled style="color:var(--gray-400)">— Crea cursos desde la pestaña Cursos —</option>`;
+  // Include orphan course names (old data) not in courses list
+  const extra = (selectedValues || []).filter(v => v && !sorted.find(c => c.name === v));
+  sel.innerHTML = sorted.map(c =>
+      `<option value="${window.App.escHtml(c.name)}" ${selectedValues.includes(c.name) ? 'selected' : ''}>${window.App.escHtml(c.name)}</option>`
+    ).join('') +
+    extra.map(v => `<option value="${window.App.escHtml(v)}" selected>${window.App.escHtml(v)} (sin lista)</option>`).join('');
+  if (sorted.length === 0 && extra.length === 0) {
+    sel.innerHTML = `<option value="" disabled style="color:var(--gray-400)">— Crea cursos desde la pestaña Cursos —</option>`;
   }
 }
+
+// Populate the "primary course" select from the currently selected courses in the picker.
+function populatePrimaryCourseSelect(selectedValue) {
+  const wrap = document.getElementById('student-primary-course-wrap');
+  const sel = document.getElementById('student-primary-course');
+  const selectedCourses = Array.from(document.getElementById('student-courses').selectedOptions).map(o => o.value);
+
+  if (selectedCourses.length < 2) {
+    if (wrap) wrap.classList.add('hidden');
+    sel.innerHTML = selectedCourses.map(c => `<option value="${window.App.escHtml(c)}">${window.App.escHtml(c)}</option>`).join('');
+    return;
+  }
+  if (wrap) wrap.classList.remove('hidden');
+  const primary = selectedCourses.includes(selectedValue) ? selectedValue : selectedCourses[0];
+  sel.innerHTML = selectedCourses.map(c =>
+    `<option value="${window.App.escHtml(c)}" ${c === primary ? 'selected' : ''}>${window.App.escHtml(c)}</option>`
+  ).join('');
+}
+
+// A student enrolled in more than one course simultaneously
+window.App.isMultiCourseStudent = function(s) {
+  return (s.courses || (s.course ? [s.course] : [])).length > 1;
+};
 
 // Initialize student events
 window.App.initStudentEvents = function() {
@@ -247,6 +277,7 @@ window.App.initStudentEvents = function() {
   document.getElementById('student-filter-course').addEventListener('change', window.App.applyStudentFilters);
   document.getElementById('student-filter-group').addEventListener('change', window.App.applyStudentFilters);
   document.getElementById('student-filter-active').addEventListener('change', window.App.applyStudentFilters);
+  document.getElementById('student-courses').addEventListener('change', () => populatePrimaryCourseSelect(document.getElementById('student-primary-course').value));
 }
 
 // Create a new individual class for a specific student

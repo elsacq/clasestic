@@ -22,7 +22,7 @@ window.App.renderCourses = function() {
     .slice()
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(c => {
-      const studentCount = window.App.state.students.filter(s => s.course === c.name).length;
+      const studentCount = window.App.state.students.filter(s => (s.courses || (s.course ? [s.course] : [])).includes(c.name)).length;
       return `
         <div class="card">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
@@ -31,6 +31,7 @@ window.App.renderCourses = function() {
               ${c.description ? `<div style="font-size:0.78rem;color:var(--gray-500);margin-top:2px">${window.App.escHtml(c.description)}</div>` : ''}
               <div style="font-size:0.75rem;color:var(--gray-400);margin-top:5px">
                 <span class="detail-student-chip">${studentCount} alumno${studentCount !== 1 ? 's' : ''}</span>
+                ${c.monthlyFeeNormal ? `<span class="detail-student-chip">${window.App.fmtCurrency(c.monthlyFeeNormal)}/mes · ${window.App.fmtCurrency(c.monthlyFeeSecondSubject || 0)}/mes 2ª asig.</span>` : ''}
               </div>
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0">
@@ -51,6 +52,8 @@ window.App.openNewCourse = function() {
   document.getElementById('course-id').value          = '';
   document.getElementById('course-name').value        = '';
   document.getElementById('course-description').value = '';
+  document.getElementById('course-monthly-fee-normal').value = '';
+  document.getElementById('course-monthly-fee-second').value = '';
   window.App.openModal('modal-course');
 }
 
@@ -61,6 +64,8 @@ window.App.openEditCourse = function(courseId) {
   document.getElementById('course-id').value          = c.id;
   document.getElementById('course-name').value        = c.name;
   document.getElementById('course-description').value = c.description || '';
+  document.getElementById('course-monthly-fee-normal').value = c.monthlyFeeNormal ?? '';
+  document.getElementById('course-monthly-fee-second').value = c.monthlyFeeSecondSubject ?? '';
   window.App.openModal('modal-course');
 }
 
@@ -69,6 +74,8 @@ window.App.saveCourse = function(e) {
   const id          = document.getElementById('course-id').value;
   const name        = document.getElementById('course-name').value.trim();
   const description = document.getElementById('course-description').value.trim();
+  const monthlyFeeNormal = parseFloat(document.getElementById('course-monthly-fee-normal').value) || 0;
+  const monthlyFeeSecondSubject = parseFloat(document.getElementById('course-monthly-fee-second').value) || 0;
 
   if (!name) { window.App.showToast('El nombre del curso es obligatorio', 'error'); return; }
   const duplicate = window.App.state.courses.find(c => c.name.toLowerCase() === name.toLowerCase() && c.id !== id);
@@ -80,11 +87,18 @@ window.App.saveCourse = function(e) {
       const oldName = c.name;
       c.name = name;
       c.description = description;
+      c.monthlyFeeNormal = monthlyFeeNormal;
+      c.monthlyFeeSecondSubject = monthlyFeeSecondSubject;
       // Rename references in students
-      window.App.state.students.forEach(s  => { if (s.course   === oldName) s.course   = name; });
+      window.App.state.students.forEach(s => {
+        if (!Array.isArray(s.courses)) s.courses = s.course ? [s.course] : [];
+        s.courses = s.courses.map(cn => cn === oldName ? name : cn);
+        if (s.course === oldName) s.course = name;
+        if (s.primaryCourse === oldName) s.primaryCourse = name;
+      });
     }
   } else {
-    window.App.state.courses.push({ id: window.App.uid(), name, description });
+    window.App.state.courses.push({ id: window.App.uid(), name, description, monthlyFeeNormal, monthlyFeeSecondSubject });
   }
 
   window.App.saveState();
@@ -96,7 +110,7 @@ window.App.saveCourse = function(e) {
 window.App.deleteCourse = function(courseId) {
   const c = window.App.state.courses.find(c => c.id === courseId);
   if (!c) return;
-  const studentCount = window.App.state.students.filter(s => s.course === c.name).length;
+  const studentCount = window.App.state.students.filter(s => (s.courses || (s.course ? [s.course] : [])).includes(c.name)).length;
   const extra = studentCount > 0
     ? ` Se borrará la referencia en ${studentCount} alumno${studentCount !== 1 ? 's' : ''}.`
     : '';
@@ -104,7 +118,13 @@ window.App.deleteCourse = function(courseId) {
     'Eliminar curso',
     `¿Eliminar el curso "${c.name}"?${extra}`,
     () => {
-      window.App.state.students.forEach(s  => { if (s.course  === c.name) s.course  = ''; });
+      window.App.state.students.forEach(s => {
+        if (!Array.isArray(s.courses)) s.courses = s.course ? [s.course] : [];
+        s.courses = s.courses.filter(cn => cn !== c.name);
+        if (s.course === c.name) s.course = s.courses[0] || '';
+        if (s.primaryCourse === c.name) s.primaryCourse = s.courses[0] || '';
+      });
+      window.App.state.groups.forEach(g => { if (g.courseId === courseId) g.courseId = null; });
       window.App.state.courses = window.App.state.courses.filter(co => co.id !== courseId);
       window.App.saveState();
       window.App.renderCurrentTab();

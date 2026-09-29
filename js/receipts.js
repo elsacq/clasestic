@@ -97,6 +97,14 @@ function processGenerateAllReceipts(students) {
   }
 }
 
+// Computes the amount to bill for a set of classes. Group classes belonging to a
+// monthly-billing group are charged a flat quota once per group+month instead of
+// per class, using the linked course's normal/2nd-subject rate (see getStudentCourseFee).
+function computeReceiptAmount(s, classIds) {
+  const amount = getReceiptLineItems(s, { classIds }).reduce((sum, item) => sum + item.fee, 0);
+  return Math.round(amount * 100) / 100;
+}
+
 function doGenerateReceipt(s, silent = false) {
   window.App.state.receiptCounter = (window.App.state.receiptCounter || 0) + 1;
   const now   = new Date();
@@ -127,10 +135,7 @@ function doGenerateReceipt(s, silent = false) {
     return false;
   }
   
-  const amount = classesToBill.reduce((sum, classId) => {
-    const c = window.App.state.classes.find(cl => cl.id === classId);
-    return sum + (parseFloat(c.fee) || 0);
-  }, 0);
+  const amount = computeReceiptAmount(s, classesToBill);
 
   const receipt = {
     id:          window.App.uid(),
@@ -163,24 +168,66 @@ window.App.openStudentReceipts = function(studentId) {
   window.App.openModal('modal-receipts');
 }
 
-// Build the class-lines HTML block for a receipt
-function buildReceiptClassLines(r) {
+// Determines the monthly fee a student pays for a given course: the "normal" rate for
+// their primary course, and the "2nd subject" rate for any other course billed monthly
+// simultaneously (based on the student's actual monthly-billing group memberships).
+function getStudentCourseFee(s, course) {
+  if (!course) return 0;
+  const studentGroups = window.App.state.groups.filter(g => g.billingMode === 'monthly' && (g.studentIds || []).includes(s.id));
+  const monthlyCourseIds = [...new Set(studentGroups.map(g => g.courseId).filter(Boolean))];
+
+  if (monthlyCourseIds.length <= 1) return parseFloat(course.monthlyFeeNormal) || 0;
+
+  const primaryCourseName = s.primaryCourse || s.course || '';
+  const primaryCourse = window.App.state.courses.find(c => c.name === primaryCourseName && monthlyCourseIds.includes(c.id));
+  const primaryCourseId = primaryCourse ? primaryCourse.id : monthlyCourseIds[0];
+
+  return course.id === primaryCourseId
+    ? (parseFloat(course.monthlyFeeNormal) || 0)
+    : (parseFloat(course.monthlyFeeSecondSubject) || 0);
+}
+
+// Builds the billable line items for a receipt (date/month label, type label, amount),
+// collapsing monthly-billing group classes into a single quota per group+month.
+function getReceiptLineItems(s, r) {
   const classIds = r.classIds || [];
-  if (classIds.length === 0) return '';
   const classes = classIds
     .map(id => window.App.state.classes.find(c => c.id === id))
     .filter(Boolean)
     .sort((a, b) => a.date.localeCompare(b.date));
-  const rows = classes.map(c => {
-    const groupName = c.groupId
-      ? (window.App.state.groups.find(g => g.id === c.groupId)?.name || 'Grupo')
-      : null;
+  const monthlyShown = new Set();
+  const items = [];
+
+  classes.forEach(c => {
+    const group = c.groupId ? window.App.state.groups.find(g => g.id === c.groupId) : null;
+
+    if (group && group.billingMode === 'monthly') {
+      const monthKey = `${group.id}|${c.date.substring(0, 7)}`;
+      if (monthlyShown.has(monthKey)) return; // already billed this group+month
+      monthlyShown.add(monthKey);
+      const course = window.App.state.courses.find(co => co.id === group.courseId);
+      const fee = getStudentCourseFee(s, course);
+      const courseLabel = course ? course.name : group.name;
+      items.push({ dateLabel: getMonthLabel(c.date.substring(0, 7)), typeLabel: `Cuota mensual · ${courseLabel}`, fee });
+      return;
+    }
+
+    const groupName = group ? group.name : null;
     const typeLabel = c.type === 'individual' ? 'Individual' : (groupName || 'Grupal');
-    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--gray-100);font-size:0.78rem;color:var(--gray-700)">
-      <span>${window.App.fmtDate(c.date)}&nbsp;&nbsp;<span style="color:var(--gray-500)">${window.App.escHtml(typeLabel)}</span></span>
-      <span style="font-weight:600">${window.App.fmtCurrency(c.fee)}</span>
-    </div>`;
-  }).join('');
+    const fee = parseFloat(c.fee) || 0;
+    items.push({ dateLabel: window.App.fmtDate(c.date), typeLabel, fee });
+  });
+
+  return items;
+}
+
+function buildReceiptClassLines(s, r) {
+  const items = getReceiptLineItems(s, r);
+  if (items.length === 0) return '';
+  const rows = items.map(item => `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--gray-100);font-size:0.78rem;color:var(--gray-700)">
+      <span>${window.App.escHtml(item.dateLabel)}&nbsp;&nbsp;<span style="color:var(--gray-500)">${window.App.escHtml(item.typeLabel)}</span></span>
+      <span style="font-weight:600">${window.App.fmtCurrency(item.fee)}</span>
+    </div>`).join('');
   return `<div style="margin:8px 0 4px;background:var(--gray-50);border-radius:6px;padding:6px 10px">${rows}</div>`;
 }
 
@@ -214,7 +261,7 @@ function renderReceiptsModal(s) {
         </div>
         <div class="receipt-amount">${window.App.fmtCurrency(r.amount)}</div>
       </div>
-      ${buildReceiptClassLines(r)}
+      ${buildReceiptClassLines(s, r)}
       <div class="receipt-item-actions">
         ${r.status === 'pending' ? `
           <button class="btn btn-sm btn-secondary" onclick="window.markReceiptAsSent('${s.id}','${r.id}')">Marcar enviado</button>
@@ -290,7 +337,7 @@ window.App.downloadReceiptPdf = function(studentId, receiptId) {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(107, 114, 128);
-  const meta = [s.course, s.phone].filter(Boolean).join('  ·  ');
+  const meta = [(s.courses || []).join(', ') || s.course, s.phone].filter(Boolean).join('  ·  ');
   if (meta) doc.text(meta, margin + 4, y + 21);
 
   // Amount block
@@ -313,19 +360,15 @@ window.App.downloadReceiptPdf = function(studentId, receiptId) {
   doc.setTextColor(107, 114, 128);
   doc.text('DETALLE DE CLASES', margin + 4, y);
   
-  // Get classes from receipt
-  const classIds = r.classIds || [];
-  const classes = classIds
-    .map(id => window.App.state.classes.find(c => c.id === id))
-    .filter(Boolean)
-    .sort((a, b) => a.date.localeCompare(b.date));
+  // Get billable line items from receipt (handles monthly quotas and discounts)
+  const lineItems = getReceiptLineItems(s, r);
   
   y += 6;
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(31, 41, 55);
   
-  if (classes.length > 0) {
+  if (lineItems.length > 0) {
     // Table header
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7);
@@ -339,19 +382,16 @@ window.App.downloadReceiptPdf = function(studentId, receiptId) {
     doc.setFontSize(8);
     doc.setTextColor(31, 41, 55);
     
-    classes.forEach(c => {
+    lineItems.forEach(item => {
       if (y > pageH - 35) {
         // New page if needed
         doc.addPage();
         y = margin;
       }
       
-      const classType = c.type === 'individual' ? 'Individual' : 
-                       (c.groupId ? window.App.state.groups.find(g => g.id === c.groupId)?.name || 'Grupo' : 'Grupo');
-      
-      doc.text(window.App.fmtDate(c.date), margin + 4, y);
-      doc.text(classType, margin + 30, y);
-      doc.text(window.App.fmtCurrency(c.fee), margin + contentW - 4, y, { align: 'right' });
+      doc.text(item.dateLabel, margin + 4, y);
+      doc.text(item.typeLabel, margin + 30, y);
+      doc.text(window.App.fmtCurrency(item.fee), margin + contentW - 4, y, { align: 'right' });
       y += 5;
     });
   } else {
@@ -612,7 +652,7 @@ window.App.applyReceiptFilters = function() {
               </div>
               <div class="receipt-amount">${window.App.fmtCurrency(r.amount)}</div>
             </div>
-            ${buildReceiptClassLines(r)}
+            ${buildReceiptClassLines(s, r)}
             <div class="receipt-item-actions">
               ${r.status === 'pending' ? `
                 <button class="btn btn-sm btn-secondary" onclick="window.markReceiptAsSent('${s.id}','${r.id}')">Marcar enviado</button>
@@ -728,15 +768,12 @@ async function generateReceiptPdfBlob(student, receipt) {
   
   // Table rows
   doc.setFont(undefined, 'normal');
-  const classIds = receipt.classIds || [];
-  classIds.forEach(classId => {
-    const c = window.App.state.classes.find(cl => cl.id === classId);
-    if (c) {
-      doc.text(window.App.fmtDate(c.date), 20, y);
-      doc.text(c.classType || 'Individual', 60, y);
-      doc.text(window.App.fmtCurrency(c.fee), 150, y);
-      y += 7;
-    }
+  const lineItems = getReceiptLineItems(student, receipt);
+  lineItems.forEach(item => {
+    doc.text(item.dateLabel, 20, y);
+    doc.text(item.typeLabel, 60, y);
+    doc.text(window.App.fmtCurrency(item.fee), 150, y);
+    y += 7;
   });
   
   // Total

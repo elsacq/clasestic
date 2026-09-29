@@ -5,10 +5,10 @@
 window.App = window.App || {};
 
 window.App.state = {
-  courses:  [],   // { id, name, description }
-  students: [],   // { id, name, phone, course, groups, createdAt, balance, receipts[] }
-  groups:   [],   // { id, name, description, studentIds[] }
-  classes:  [],   // { id, type, course, date, time, fee, studentIds, groupId, gcalEventId? }
+  courses:  [],   // { id, name, description, monthlyFeeNormal, monthlyFeeSecondSubject }
+  students: [],   // { id, name, phone, course, courses[], primaryCourse, groups, createdAt, balance, receipts[] }
+  groups:   [],   // { id, name, description, studentIds[], fee, billingMode: 'perClass'|'monthly', courseId }
+  classes:  [],   // { id, type, course, date, time, fee, studentIds, groupId, attendance: {studentId: boolean}, gcalEventId? }
   settings: {
     academyName: 'Mi Academia',
     defaultIndividualFee: 15,

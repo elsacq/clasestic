@@ -770,6 +770,20 @@ input::placeholder { color: var(--gray-400); }
   color: var(--gray-700);
   margin: 2px;
 }
+.attendance-chip {
+  border: none;
+  cursor: pointer;
+  gap: 4px;
+}
+.attendance-chip.present {
+  background: #dcfce7;
+  color: #166534;
+}
+.attendance-chip.absent {
+  background: #fee2e2;
+  color: #991b1b;
+  text-decoration: line-through;
+}
 
 /* =============================================
    Toast
