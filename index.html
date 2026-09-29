@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Academia TIC - Gestión de Clases</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=20260928" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
@@ -426,7 +426,14 @@
           <input type="number" id="group-fee" required step="0.01" min="0" placeholder="0.00" />
         </div>
         <div class="form-group">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="group-active" style="width:auto;" checked />
+            Grupo activo
+          </label>
+        </div>
+        <div class="form-group">
           <label>Alumnos</label>
+          <input type="text" id="group-students-search" placeholder="Buscar alumno por nombre..." autocomplete="off" />
           <div id="group-students-picker" class="students-picker"></div>
           <p class="form-hint">Selecciona los alumnos que forman parte de este grupo</p>
         </div>
@@ -560,21 +567,21 @@
   </div>
 
   <!-- Load scripts in dependency order -->
-  <script src="js/config.js"></script>
-  <script src="js/utils.js"></script>
-  <script src="js/state.js"></script>
-  <script src="js/ui.js"></script>
-  <script src="js/persistence.js"></script>
-  <script src="js/github.js"></script>
-  <script src="js/gcal.js"></script>
-  <script src="js/students.js"></script>
-  <script src="js/classes.js"></script>
-  <script src="js/groups.js"></script>
-  <script src="js/courses.js"></script>
-  <script src="js/calendar.js"></script>
-  <script src="js/dashboard.js"></script>
-  <script src="js/receipts.js"></script>
-  <script src="js/reports.js"></script>
-  <script src="js/main.js"></script>
+  <script src="js/config.js?v=20260928"></script>
+  <script src="js/utils.js?v=20260928"></script>
+  <script src="js/state.js?v=20260928"></script>
+  <script src="js/ui.js?v=20260928"></script>
+  <script src="js/persistence.js?v=20260928"></script>
+  <script src="js/github.js?v=20260928"></script>
+  <script src="js/gcal.js?v=20260928"></script>
+  <script src="js/students.js?v=20260928"></script>
+  <script src="js/classes.js?v=20260928"></script>
+  <script src="js/groups.js?v=20260928"></script>
+  <script src="js/courses.js?v=20260928"></script>
+  <script src="js/calendar.js?v=20260928"></script>
+  <script src="js/dashboard.js?v=20260928"></script>
+  <script src="js/receipts.js?v=20260928"></script>
+  <script src="js/reports.js?v=20260928"></script>
+  <script src="js/main.js?v=20260928"></script>
 </body>
 </html>

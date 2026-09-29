@@ -27,12 +27,14 @@ window.App.buildGroupCard = function(g) {
   
   const moreStudents = studentCount > 3 ? ` +${studentCount - 3} más` : '';
   const feeStr = g.fee != null ? `${parseFloat(g.fee).toFixed(2).replace('.', ',')} €/alumno` : 'Sin tarifa';
+  const isActive = g.active !== false; // Default to active if not set
   
   return `
-    <div class="group-card">
+    <div class="group-card" style="${!isActive ? 'opacity:0.6;' : ''}">
       <div class="group-card-header">
         <h4>${window.App.escHtml(g.name)}</h4>
       </div>
+      ${!isActive ? '<span style="background:#ef4444;color:white;padding:4px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;margin-bottom:8px;display:inline-block;">INACTIVO</span>' : ''}
       ${g.description ? `<p class="group-description">${window.App.escHtml(g.description)}</p>` : ''}
       <div class="group-stats">
         <span class="group-student-count">
@@ -53,6 +55,9 @@ window.App.buildGroupCard = function(g) {
         <button class="btn btn-icon" onclick="window.openEditGroup('${g.id}')" title="Editar">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </button>
+        <button class="btn btn-icon" onclick="window.toggleGroupActive('${g.id}')" title="${isActive ? 'Desactivar' : 'Activar'} grupo">
+          ${isActive ? '❌' : '✅'}
+        </button>
         <button class="btn btn-icon btn-icon--danger" onclick="window.deleteGroup('${g.id}')" title="Eliminar">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
         </button>
@@ -66,6 +71,9 @@ window.App.openNewGroup = function() {
   document.getElementById('group-name').value = '';
   document.getElementById('group-description').value = '';
   document.getElementById('group-fee').value = '';
+  document.getElementById('group-active').checked = true;
+  const search = document.getElementById('group-students-search');
+  if (search) search.value = '';
   window.App.buildGroupStudentsPicker([]);
   window.App.openModal('modal-group');
 };
@@ -79,6 +87,9 @@ window.App.openEditGroup = function(groupId) {
   document.getElementById('group-name').value = g.name;
   document.getElementById('group-description').value = g.description || '';
   document.getElementById('group-fee').value = g.fee != null ? g.fee : '';
+  document.getElementById('group-active').checked = g.active !== false;
+  const search = document.getElementById('group-students-search');
+  if (search) search.value = '';
   window.App.buildGroupStudentsPicker(g.studentIds || []);
   window.App.openModal('modal-group');
 };
@@ -90,6 +101,7 @@ window.App.saveGroup = function(e) {
   const name = document.getElementById('group-name').value.trim();
   const description = document.getElementById('group-description').value.trim();
   const fee = parseFloat(document.getElementById('group-fee').value);
+  const active = document.getElementById('group-active').checked;
   
   if (!name) {
     window.App.showToast('El nombre del grupo es obligatorio', 'error');
@@ -109,6 +121,7 @@ window.App.saveGroup = function(e) {
       g.name = name;
       g.description = description;
       g.fee = fee;
+      g.active = active;
       g.studentIds = selectedStudents;
       window.App.showToast('Grupo actualizado', 'success');
     }
@@ -119,6 +132,7 @@ window.App.saveGroup = function(e) {
       name,
       description,
       fee,
+      active,
       studentIds: selectedStudents,
     });
     window.App.showToast('Grupo creado', 'success');
@@ -167,7 +181,7 @@ window.App.buildGroupStudentsPicker = function(selectedIds) {
   picker.innerHTML = students.map(s => {
     const isChecked = selectedIds.includes(s.id);
     return `
-      <label class="picker-student ${isChecked ? 'selected' : ''}" data-id="${s.id}">
+      <label class="picker-student ${isChecked ? 'selected' : ''}" data-id="${s.id}" data-name="${window.App.escHtml(s.name.toLowerCase())}">
         <input type="checkbox" name="group_student" value="${s.id}" ${isChecked ? 'checked' : ''} />
         <div class="picker-check">
           <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -187,6 +201,19 @@ window.App.buildGroupStudentsPicker = function(selectedIds) {
       input.checked = el.classList.contains('selected');
     });
   });
+
+  const search = document.getElementById('group-students-search');
+  if (search) window.App.filterGroupStudentsPicker(search.value);
+};
+
+window.App.filterGroupStudentsPicker = function(query) {
+  const picker = document.getElementById('group-students-picker');
+  if (!picker) return;
+  const term = (query || '').trim().toLowerCase();
+  picker.querySelectorAll('.picker-student').forEach(el => {
+    const matches = !term || (el.dataset.name || '').includes(term);
+    el.style.display = matches ? '' : 'none';
+  });
 };
 
 window.App.getGroupPickerSelected = function() {
@@ -204,12 +231,28 @@ window.App.initGroupEvents = function() {
   if (form) {
     form.addEventListener('submit', window.App.saveGroup);
   }
+
+  const search = document.getElementById('group-students-search');
+  if (search) {
+    search.addEventListener('input', () => window.App.filterGroupStudentsPicker(search.value));
+  }
+};
+
+// Toggle group active/inactive status
+window.App.toggleGroupActive = function(groupId) {
+  const g = window.App.state.groups.find(gr => gr.id === groupId);
+  if (!g) return;
+  g.active = g.active === false;
+  window.App.saveState();
+  window.App.renderGroups();
+  window.App.showToast(g.active === false ? 'Grupo desactivado' : 'Grupo activado', 'success');
 };
 
 // Make functions globally available for onclick handlers
 if (typeof window !== 'undefined') {
   window.openEditGroup = window.App.openEditGroup;
   window.deleteGroup = window.App.deleteGroup;
+  window.toggleGroupActive = window.App.toggleGroupActive;
   window.createClassFromGroup = function(groupId) {
     window.App.openNewClassFromGroup(groupId);
   };

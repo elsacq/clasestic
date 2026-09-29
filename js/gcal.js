@@ -38,16 +38,27 @@ function handleGCalToken(response) {
 }
 
 window.App.connectGCal = function() {
-  const clientId = window.App.state.settings?.gcalClientId?.trim();
+  // Read directly from the settings inputs in case the user hasn't clicked "Guardar" yet
+  const inputClientId   = document.getElementById('settings-gcal-client-id')?.value.trim();
+  const inputCalendarId = document.getElementById('settings-gcal-calendar-id')?.value.trim();
+  const clientId = inputClientId || window.App.state.settings?.gcalClientId?.trim();
   if (!clientId) {
     window.App.showToast('Introduce primero el Client ID en Ajustes', 'error');
     return;
   }
+  if (!window.App.state.settings) window.App.state.settings = {};
+  window.App.state.settings.gcalClientId   = clientId;
+  window.App.state.settings.gcalCalendarId = inputCalendarId || window.App.state.settings.gcalCalendarId || 'primary';
+  window.App.saveState();
   if (!window.google?.accounts?.oauth2) {
     window.App.showToast('El SDK de Google aún no está cargado, espera un momento', 'error');
     return;
   }
-  if (!window.App.gcalTokenClient) window.App.initGCalTokenClient();
+  window.App.initGCalTokenClient();
+  if (!window.App.gcalTokenClient) {
+    window.App.showToast('No se pudo inicializar Google Calendar, revisa el Client ID', 'error');
+    return;
+  }
   window.App.gcalTokenClient.requestAccessToken({ prompt: '' });
 };
 

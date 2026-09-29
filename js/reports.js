@@ -42,14 +42,12 @@ function buildReportsData(fromDate, toDate) {
         const billedMonth = r.generatedAt.substring(0, 7);
         const billedCurrent = billedByMonth.get(billedMonth) || 0;
         billedByMonth.set(billedMonth, billedCurrent + amount);
-      }
 
-      if (r.status === 'paid') {
-        const paidDate = r.paidAt || r.generatedAt;
-        if (inDateRange(paidDate, fromDate, toDate)) {
-          const paidMonth = paidDate.substring(0, 7);
-          const paidCurrent = paidByMonth.get(paidMonth) || 0;
-          paidByMonth.set(paidMonth, paidCurrent + amount);
+        // "Cobrado" se agrupa por mes de facturación (no de pago) para que
+        // cuadre con el total facturado una vez todo está pagado.
+        if (r.status === 'paid') {
+          const paidCurrent = paidByMonth.get(billedMonth) || 0;
+          paidByMonth.set(billedMonth, paidCurrent + amount);
         }
       }
     });
