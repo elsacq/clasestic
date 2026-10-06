@@ -5,6 +5,13 @@
 
 window.App = window.App || {};
 
+// True if the group's monthly quota for the class's month was already billed in advance.
+function isAdvanceBilled(s, c) {
+  if (!c.groupId) return false;
+  const month = c.date.substring(0, 7);
+  return (s.receipts || []).some(r => (r.monthlyItems || []).some(i => i.month === month && (i.groupId === c.groupId || (i.extraGroupIds || []).includes(c.groupId))));
+}
+
 window.App.generateReceipt = function(studentId) {
   const s = window.App.state.students.find(s => s.id === studentId);
   if (!s) return;
@@ -13,7 +20,7 @@ window.App.generateReceipt = function(studentId) {
   const billedClassIds = new Set();
   (s.receipts || []).forEach(r => (r.classIds || []).forEach(id => billedClassIds.add(id)));
   const unbilledClasses = window.App.state.classes.filter(
-    c => c.date <= today && c.studentIds.includes(studentId) && !billedClassIds.has(c.id)
+    c => c.date <= today && c.studentIds.includes(studentId) && !billedClassIds.has(c.id) && !isAdvanceBilled(s, c)
   );
   if (unbilledClasses.length === 0) {
     window.App.showToast('Este alumno no tiene clases pendientes de facturar', 'error');
@@ -51,7 +58,8 @@ window.App.generateAllReceipts = function() {
     const unbilledClasses = window.App.state.classes.filter(c => 
       c.date <= today && 
       c.studentIds.includes(s.id) && 
-      !billedClassIds.has(c.id)
+      !billedClassIds.has(c.id) &&
+      !isAdvanceBilled(s, c)
     );
     
     return unbilledClasses.length > 0;
@@ -97,9 +105,76 @@ function processGenerateAllReceipts(students) {
   }
 }
 
-// Computes the amount to bill for a set of classes. Group classes belonging to a
-// monthly-billing group are charged a flat quota once per group+month instead of
-// per class, using the linked course's normal/2nd-subject rate (see getStudentCourseFee).
+// Generates one advance receipt per student for the current month's monthly-billing groups,
+// one line per course (normal rate, or 2nd-subject rate when in several courses).
+window.App.generateMonthlyGroupReceipts = function() {
+  const month = document.getElementById('monthly-group-receipt-month')?.value || window.App.todayStr().substring(0, 7);
+  const monthLabel = getMonthLabel(month);
+  const plans = [];
+
+  window.App.state.students.filter(s => s.active !== false).forEach(s => {
+    const groups = window.App.state.groups.filter(g =>
+      g.billingMode === 'monthly' && g.active !== false && g.courseId && (g.studentIds || []).includes(s.id));
+    const billed = new Set();
+    (s.receipts || []).forEach(r => (r.monthlyItems || []).forEach(i => {
+      if (i.month === month) billed.add(i.courseId);
+    }));
+    const items = [];
+    groups.forEach(g => {
+      if (billed.has(g.courseId)) return;
+      billed.add(g.courseId);
+      const course = window.App.state.courses.find(c => c.id === g.courseId);
+      if (!course) return;
+      items.push({
+        month, groupId: g.id, courseId: course.id,
+        label: `Clases grupales ${monthLabel} ${course.name}`,
+        fee: getStudentCourseFee(s, course),
+      });
+    });
+    // Groups sharing a course are covered by one quota; keep all group ids for dedupe.
+    groups.forEach(g => {
+      const item = items.find(i => i.courseId === g.courseId);
+      if (item && item.groupId !== g.id) (item.extraGroupIds = item.extraGroupIds || []).push(g.id);
+    });
+    if (items.length) plans.push({ s, items });
+  });
+
+  if (plans.length === 0) {
+    window.App.showToast(`No hay cuotas mensuales pendientes de ${monthLabel}`, 'info');
+    return;
+  }
+
+  window.App.confirmAction(
+    'Generar recibos mensuales de grupos',
+    `Se generarán ${plans.length} recibo(s) de clases grupales de ${monthLabel} por adelantado. ¿Continuar?`,
+    () => {
+      const now = new Date();
+      const prefix = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+      plans.forEach(({ s, items }) => {
+        window.App.state.receiptCounter = (window.App.state.receiptCounter || 0) + 1;
+        const amount = Math.round(items.reduce((sum, i) => sum + i.fee, 0) * 100) / 100;
+        if (!s.receipts) s.receipts = [];
+        s.receipts.push({
+          id: window.App.uid(),
+          number: `${prefix}-${String(window.App.state.receiptCounter).padStart(3, '0')}`,
+          generatedAt: window.App.todayStr(),
+          amount,
+          classIds: [],
+          monthlyItems: items,
+          status: 'pending',
+          sentAt: null,
+          paidAt: null,
+        });
+      });
+      window.App.saveState();
+      window.App.renderCurrentTab();
+      window.App.showToast(`${plans.length} recibo(s) de ${monthLabel} generado(s)`, 'success');
+    }
+  );
+}
+
+// Group classes in a monthly-billing group are charged a flat quota once per group+month
+// (course normal/2nd-subject rate, see getStudentCourseFee).
 function computeReceiptAmount(s, classIds) {
   const amount = getReceiptLineItems(s, { classIds }).reduce((sum, item) => sum + item.fee, 0);
   return Math.round(amount * 100) / 100;
@@ -125,7 +200,7 @@ function doGenerateReceipt(s, silent = false) {
   
   // Get unbilled past classes
   const classesToBill = window.App.state.classes
-    .filter(c => c.date <= today && c.studentIds.includes(s.id) && !billedClassIds.has(c.id))
+    .filter(c => c.date <= today && c.studentIds.includes(s.id) && !billedClassIds.has(c.id) && !isAdvanceBilled(s, c))
     .map(c => c.id);
   
   if (classesToBill.length === 0) {
@@ -196,7 +271,7 @@ function getReceiptLineItems(s, r) {
     .filter(Boolean)
     .sort((a, b) => a.date.localeCompare(b.date));
   const monthlyShown = new Set();
-  const items = [];
+  const items = (r.monthlyItems || []).map(i => ({ dateLabel: 'Mensual', typeLabel: i.label, fee: i.fee }));
 
   classes.forEach(c => {
     const group = c.groupId ? window.App.state.groups.find(g => g.id === c.groupId) : null;
@@ -955,6 +1030,13 @@ window.App.initReceiptEvents = function() {
   const btnGenerateAll = document.getElementById('btn-generate-all-receipts');
   if (btnGenerateAll) {
     btnGenerateAll.addEventListener('click', window.App.generateAllReceipts);
+  }
+
+  const btnMonthlyGroups = document.getElementById('btn-generate-monthly-group-receipts');
+  if (btnMonthlyGroups) {
+    const monthInput = document.getElementById('monthly-group-receipt-month');
+    if (monthInput) monthInput.value = window.App.todayStr().substring(0, 7);
+    btnMonthlyGroups.addEventListener('click', window.App.generateMonthlyGroupReceipts);
   }
   
   const filterStatus = document.getElementById('receipt-filter-status');
