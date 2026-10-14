@@ -1,9 +1,40 @@
-/* =============================================
+﻿/* =============================================
    Receipts Module
    Receipt generation, management, PDF export
    ============================================= */
 
 window.App = window.App || {};
+
+// Invoices (issued when a notice is paid) are numbered correlatively per year: YYYY-NNN.
+function nextInvoiceNumber(year) {
+  let max = 0;
+  window.App.state.students.forEach(st => (st.receipts || []).forEach(r => {
+    const m = /^(\d{4})-(\d+)$/.exec(r.invoice?.number || '');
+    if (m && Number(m[1]) === year) max = Math.max(max, Number(m[2]));
+  }));
+  return `${year}-${String(max + 1).padStart(3, '0')}`;
+}
+
+function noticeMonth(r) {
+  return r.monthlyItems?.[0]?.month || (r.generatedAt || window.App.todayStr()).substring(0, 7);
+}
+
+function receiptTitle(r) {
+  return `Aviso de pago · ${getMonthLabel(noticeMonth(r))}${r.invoice ? ` · Factura ${r.invoice.number}` : ''}`;
+}
+
+function receiptActionsHtml(s, r) {
+  return `
+    ${r.status === 'pending' ? `
+      <button class="btn btn-sm btn-secondary" onclick="window.markReceiptAsSent('${s.id}','${r.id}')">Marcar enviado</button>
+      <button class="btn btn-sm btn-secondary" onclick="window.cancelReceipt('${s.id}','${r.id}')">Cancelar</button>
+    ` : ''}
+    ${r.status !== 'paid' ? `
+      <button class="btn btn-sm btn-primary" onclick="window.markReceiptAsPaid('${s.id}','${r.id}')">Marcar pagado</button>
+    ` : ''}
+    <button class="btn btn-sm btn-secondary" onclick="window.downloadReceiptPdf('${s.id}','${r.id}')">PDF aviso</button>
+    ${r.invoice ? `<button class="btn btn-sm btn-primary" onclick="window.downloadInvoicePdf('${s.id}','${r.id}')">PDF factura</button>` : ''}`;
+}
 
 // True if the group's monthly quota for the class's month was already billed in advance.
 function isAdvanceBilled(s, c) {
@@ -126,7 +157,7 @@ window.App.generateMonthlyGroupReceipts = function() {
       const course = window.App.state.courses.find(c => c.id === g.courseId);
       if (!course) return;
       items.push({
-        month, groupId: g.id, courseId: course.id,
+        month, groupId: g.id, courseId: course.id, courseName: course.name,
         label: `Clases grupales ${monthLabel} ${course.name}`,
         fee: getStudentCourseFee(s, course),
       });
@@ -148,16 +179,14 @@ window.App.generateMonthlyGroupReceipts = function() {
     'Generar recibos mensuales de grupos',
     `Se generarán ${plans.length} recibo(s) de clases grupales de ${monthLabel} por adelantado. ¿Continuar?`,
     () => {
-      const now = new Date();
-      const prefix = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
       plans.forEach(({ s, items }) => {
-        window.App.state.receiptCounter = (window.App.state.receiptCounter || 0) + 1;
         const amount = Math.round(items.reduce((sum, i) => sum + i.fee, 0) * 100) / 100;
         if (!s.receipts) s.receipts = [];
         s.receipts.push({
           id: window.App.uid(),
-          number: `${prefix}-${String(window.App.state.receiptCounter).padStart(3, '0')}`,
-          generatedAt: window.App.todayStr(),
+          number: null,
+          generatedAt: `${month}-01`,
+          dueDate: `${month}-05`,
           amount,
           classIds: [],
           monthlyItems: items,
@@ -181,11 +210,6 @@ function computeReceiptAmount(s, classIds) {
 }
 
 function doGenerateReceipt(s, silent = false) {
-  window.App.state.receiptCounter = (window.App.state.receiptCounter || 0) + 1;
-  const now   = new Date();
-  const year  = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const seq   = String(window.App.state.receiptCounter).padStart(3, '0');
 
   // Get classes to bill: past classes not yet billed
   const today = window.App.todayStr();
@@ -214,7 +238,7 @@ function doGenerateReceipt(s, silent = false) {
 
   const receipt = {
     id:          window.App.uid(),
-    number:      `${year}${month}-${seq}`,
+    number:      null,
     generatedAt: window.App.todayStr(),
     amount:      amount,
     classIds:    classesToBill,  // Track which classes are being billed
@@ -228,7 +252,7 @@ function doGenerateReceipt(s, silent = false) {
   if (!silent) {
     window.App.saveState();
     window.App.renderCurrentTab();
-    window.App.showToast(`Recibo ${receipt.number} generado · ${window.App.fmtCurrency(amount)}`, 'success');
+    window.App.showToast(`Aviso de pago generado · ${window.App.fmtCurrency(amount)}`, 'success');
     window.App.openStudentReceipts(s.id);
   }
   
@@ -271,7 +295,7 @@ function getReceiptLineItems(s, r) {
     .filter(Boolean)
     .sort((a, b) => a.date.localeCompare(b.date));
   const monthlyShown = new Set();
-  const items = (r.monthlyItems || []).map(i => ({ dateLabel: 'Mensual', typeLabel: i.label, fee: i.fee }));
+  const items = (r.monthlyItems || []).map(i => ({ dateLabel: 'Mensual', typeLabel: i.label, fee: i.fee, courseName: i.courseName }));
 
   classes.forEach(c => {
     const group = c.groupId ? window.App.state.groups.find(g => g.id === c.groupId) : null;
@@ -283,7 +307,7 @@ function getReceiptLineItems(s, r) {
       const course = window.App.state.courses.find(co => co.id === group.courseId);
       const fee = getStudentCourseFee(s, course);
       const courseLabel = course ? course.name : group.name;
-      items.push({ dateLabel: getMonthLabel(c.date.substring(0, 7)), typeLabel: `Cuota mensual · ${courseLabel}`, fee });
+      items.push({ dateLabel: getMonthLabel(c.date.substring(0, 7)), typeLabel: `Cuota mensual · ${courseLabel}`, fee, courseName: course?.name });
       return;
     }
 
@@ -325,7 +349,7 @@ function renderReceiptsModal(s) {
   container.innerHTML = receipts.map(r => `
     <div class="receipt-item ${r.status}">
       <div class="receipt-item-header">
-        <span class="receipt-number">Nº ${window.App.escHtml(r.number)}</span>
+        <span class="receipt-number">${window.App.escHtml(receiptTitle(r))}</span>
         <span class="receipt-status-badge ${r.status}">${statusLabels[r.status] || r.status}</span>
       </div>
       <div class="receipt-item-body">
@@ -337,18 +361,7 @@ function renderReceiptsModal(s) {
         <div class="receipt-amount">${window.App.fmtCurrency(r.amount)}</div>
       </div>
       ${buildReceiptClassLines(s, r)}
-      <div class="receipt-item-actions">
-        ${r.status === 'pending' ? `
-          <button class="btn btn-sm btn-secondary" onclick="window.markReceiptAsSent('${s.id}','${r.id}')">Marcar enviado</button>
-          <button class="btn btn-sm btn-secondary" onclick="window.cancelReceipt('${s.id}','${r.id}')">Cancelar</button>
-        ` : ''}
-        ${r.status === 'sent' ? `
-          <button class="btn btn-sm btn-primary" onclick="window.markReceiptAsPaid('${s.id}','${r.id}')">Marcar pagado</button>
-        ` : ''}
-        <button class="btn btn-sm ${r.status === 'paid' ? 'btn-secondary' : 'btn-primary'}" onclick="window.downloadReceiptPdf('${s.id}','${r.id}')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          PDF
-        </button>
+      <div class="receipt-item-actions">${receiptActionsHtml(s, r)}
       </div>
     </div>`).join('');
 }
@@ -358,13 +371,230 @@ window.App.cancelReceipt = function(studentId, receiptId) {
   if (!s) return;
   const r = (s.receipts || []).find(r => r.id === receiptId);
   if (!r || r.status !== 'pending') return;
-  window.App.confirmAction('Cancelar recibo', `¿Cancelar el recibo ${r.number}?`, () => {
+  window.App.confirmAction('Cancelar aviso', `¿Cancelar este aviso de pago?`, () => {
     s.receipts = s.receipts.filter(r => r.id !== receiptId);
     window.App.saveState();
     renderReceiptsModal(s);
     window.App.renderCurrentTab();
-    window.App.showToast(`Recibo ${r.number} cancelado`);
+    window.App.showToast('Aviso cancelado');
   });
+}
+
+// Payment notice (no fiscal numbering); the invoice is issued once it's paid.
+function buildNoticePdf(s, r) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const st = window.App.state.settings || {};
+  const m = 20;
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const contentW = pageW - m * 2;
+  const eur = v => window.App.fmtCurrency(v);
+  const month = noticeMonth(r);
+  const monthLabel = getMonthLabel(month);
+  const BRAND = [79, 70, 229], INK = [31, 41, 55], MUTED = [107, 114, 128], SOFT = [243, 244, 246];
+  const items = getReceiptLineItems(s, r);
+
+  // Header band
+  doc.setFillColor(...BRAND);
+  doc.rect(0, 0, pageW, 34, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  doc.text('AVISO DE PAGO', m, 16);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text('Nota de cargo · Documento informativo sin validez fiscal', m, 24);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.text(monthLabel, pageW - m, 16, { align: 'right' });
+
+  // Info cards
+  const gap = 6, cardW = (contentW - gap) / 2, cardH = 19;
+  const card = (x, y, title, value) => {
+    doc.setFillColor(...SOFT);
+    doc.roundedRect(x, y, cardW, cardH, 2, 2, 'F');
+    doc.setTextColor(...MUTED);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.text(title, x + 4, y + 6);
+    doc.setTextColor(...INK);
+    doc.setFontSize(11);
+    doc.text(String(value || '—'), x + 4, y + 14);
+  };
+  let y = 44;
+  card(m, y, 'PROFESOR', st.issuerName);
+  card(m + cardW + gap, y, 'ALUMNO', s.name);
+  y += cardH + 8;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(...MUTED);
+  doc.text('Fecha de emisión', m, y);
+  doc.setTextColor(...INK);
+  doc.text(window.App.fmtDate(r.generatedAt), m + 31, y);
+  doc.setTextColor(...MUTED);
+  doc.text('Vencimiento', m + cardW + gap, y);
+  doc.setTextColor(...INK);
+  doc.text(window.App.fmtDate(r.dueDate || `${month}-05`), m + cardW + gap + 25, y);
+  y += 14;
+
+  // Concepts table
+  const colPeriod = m + contentW - 68, colAmount = m + contentW - 3;
+  const conceptW = colPeriod - m - 9;
+  doc.setFillColor(224, 231, 255);
+  doc.rect(m, y - 5, contentW, 8, 'F');
+  doc.setTextColor(...BRAND);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.text('CONCEPTO', m + 3, y);
+  doc.text('PERIODO', colPeriod + 2, y);
+  doc.text('IMPORTE', colAmount, y, { align: 'right' });
+  y += 8;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(...INK);
+  items.forEach(item => {
+    const period = item.dateLabel === 'Mensual' ? monthLabel : item.dateLabel;
+    const lines = doc.splitTextToSize(item.typeLabel, conceptW);
+    if (y + lines.length * 5 > pageH - 90) { doc.addPage(); y = 25; }
+    doc.text(lines, m + 3, y);
+    doc.text(period, colPeriod + 2, y);
+    doc.text(eur(item.fee), colAmount, y, { align: 'right' });
+    y += lines.length * 5 + 2;
+    doc.setDrawColor(229, 231, 235);
+    doc.line(m, y - 1, m + contentW, y - 1);
+    y += 4;
+  });
+
+  // Total
+  doc.setFillColor(...SOFT);
+  doc.roundedRect(m, y, contentW, 12, 1.5, 1.5, 'F');
+  doc.setTextColor(...INK);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('TOTAL A ABONAR', m + 4, y + 8);
+  doc.setTextColor(...BRAND);
+  doc.setFontSize(12);
+  doc.text(eur(r.amount), colAmount, y + 8, { align: 'right' });
+  y += 18;
+
+  // Payment details box
+  const boxH = 38;
+  if (y + boxH > pageH - 30) { doc.addPage(); y = 25; }
+  doc.setDrawColor(...BRAND);
+  doc.setLineWidth(0.5);
+  doc.roundedRect(m, y, contentW, boxH, 2, 2, 'S');
+  doc.setTextColor(...MUTED);
+  doc.setFontSize(7);
+  doc.text('DATOS DE PAGO', m + 5, y + 7);
+  doc.setTextColor(...INK);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Método:', m + 5, y + 16);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Bizum al número ${st.issuerPhone || '—'}`, m + 28, y + 16);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Concepto:', m + 5, y + 24);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`"Clases ${s.name} ${monthLabel.split(' ')[0]}"`, m + 28, y + 24);
+  doc.setFontSize(8);
+  doc.setTextColor(...MUTED);
+  doc.text('El concepto del Bizum es obligatorio para identificar tu pago.', m + 5, y + 32);
+  y += boxH + 10;
+
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(9);
+  doc.setTextColor(...MUTED);
+  doc.text(doc.splitTextToSize('Una vez recibido el pago, se emitirá y enviará la correspondiente factura simplificada exenta de IVA.', contentW), m, y);
+
+  // Page footer
+  doc.setDrawColor(209, 213, 219);
+  doc.setLineWidth(0.3);
+  doc.line(m, pageH - 18, pageW - m, pageH - 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text(`${st.issuerName || ''}${st.issuerPhone ? ' · ' + st.issuerPhone : ''}`, pageW / 2, pageH - 12, { align: 'center' });
+
+  return doc;
+}
+
+// Simplified invoice (VAT-exempt teaching services, art. 20.Uno.9º Ley 37/1992).
+function buildInvoicePdf(s, r) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const st = window.App.state.settings || {};
+  const m = 20;
+  const pageW = doc.internal.pageSize.getWidth();
+  const contentW = pageW - m * 2;
+  const eur = v => window.App.fmtCurrency(v);
+  let y = 25;
+
+  const label = (k, v) => {
+    doc.setFont('helvetica', 'bold'); doc.text(k, m, y);
+    doc.setFont('helvetica', 'normal'); doc.text(String(v || '—'), m + doc.getTextWidth(k) + 2, y);
+    y += 6;
+  };
+
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`RECIBO / FACTURA SIMPLIFICADA Nº: ${r.invoice.number}`, m, y);
+  y += 9;
+  doc.setFontSize(10);
+  label('Fecha de emisión:', window.App.fmtDate(r.invoice.issueDate));
+
+  y += 4;
+  doc.setFont('helvetica', 'bold');
+  doc.text('DATOS DEL EMISOR (PROFESOR):', m, y); y += 6;
+  label('Nombre y Apellidos:', st.issuerName);
+  label('NIF / DNI:', st.issuerNif);
+  label('Domicilio fiscal:', st.issuerAddress);
+
+  y += 4;
+  doc.setFont('helvetica', 'bold');
+  doc.text('DATOS DEL RECEPTOR (ALUMNO):', m, y); y += 6;
+  label('Nombre del alumno:', s.name);
+
+  y += 2;
+  doc.setDrawColor(150);
+  doc.line(m, y, pageW - m, y);
+  y += 7;
+
+  const colPrice = m + contentW - 62, colVat = m + contentW - 34, colTotal = m + contentW;
+  const conceptW = colPrice - m - 22;
+  doc.setFont('helvetica', 'bold');
+  doc.text('Concepto', m, y);
+  doc.text('Precio unitario', colPrice, y, { align: 'right' });
+  doc.text('IVA', colVat, y, { align: 'center' });
+  doc.text('Total', colTotal, y, { align: 'right' });
+  y += 6;
+
+  doc.setFont('helvetica', 'normal');
+  getReceiptLineItems(s, r).forEach(item => {
+    const when = item.dateLabel === 'Mensual' ? '' : ` (${item.dateLabel})`;
+    const lines = doc.splitTextToSize(`Servicios de enseñanza y apoyo escolar: ${item.typeLabel}${when}`, conceptW);
+    if (y + lines.length * 5 > 250) { doc.addPage(); y = 25; }
+    doc.text(lines, m, y);
+    doc.text(eur(item.fee), colPrice, y, { align: 'right' });
+    doc.text('0% (Exento)', colVat, y, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.text(eur(item.fee), colTotal, y, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+    y += lines.length * 5 + 3;
+  });
+
+  doc.line(m, y, pageW - m, y);
+  y += 8;
+  doc.setFont('helvetica', 'bold');
+  doc.text(`IMPORTE TOTAL RECIBIDO: ${eur(r.amount)}`, m, y);
+  y += 7;
+  label('Método de cobro:', 'Bizum');
+  y += 2;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text(doc.splitTextToSize('Factura exenta de IVA en virtud del Artículo 20.Uno.9º de la Ley 37/1992, de 28 de diciembre, del Impuesto sobre el Valor Añadido.', contentW), m, y);
+
+  return doc;
 }
 
 window.App.downloadReceiptPdf = function(studentId, receiptId) {
@@ -372,139 +602,20 @@ window.App.downloadReceiptPdf = function(studentId, receiptId) {
   if (!s) return;
   const r = (s.receipts || []).find(r => r.id === receiptId);
   if (!r) return;
-
   if (!window.jspdf?.jsPDF) { window.App.showToast('La librería PDF no está disponible', 'error'); return; }
 
-  const { jsPDF } = window.jspdf;
-  const doc      = new jsPDF({ unit: 'mm', format: 'a5' });
-  const pageW    = doc.internal.pageSize.getWidth();
-  const pageH    = doc.internal.pageSize.getHeight();
-  const margin   = 14;
-  const contentW = pageW - margin * 2;
-  const academyName = window.App.state.settings?.academyName || 'Academia';
+  buildNoticePdf(s, r).save(`aviso_${noticeMonth(r)}_${s.name.replace(/\s+/g, '_')}.pdf`);
+  window.App.showToast('Aviso de pago descargado', 'success');
+}
 
-  // Header band
-  doc.setFillColor(79, 70, 229);
-  doc.rect(0, 0, pageW, 28, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(15);
-  doc.setFont('helvetica', 'bold');
-  doc.text(academyName, margin, 12);
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.text('RECIBO DE PAGO', margin, 20);
-  doc.setFontSize(9);
-  doc.text(`Nº ${r.number}`, pageW - margin, 12, { align: 'right' });
-  doc.text(window.App.fmtDate(r.generatedAt), pageW - margin, 20, { align: 'right' });
+window.App.downloadInvoicePdf = function(studentId, receiptId) {
+  const s = window.App.state.students.find(s => s.id === studentId);
+  const r = s && (s.receipts || []).find(r => r.id === receiptId);
+  if (!r || !r.invoice) return;
+  if (!window.jspdf?.jsPDF) { window.App.showToast('La librería PDF no está disponible', 'error'); return; }
 
-  // Student block
-  let y = 38;
-  doc.setFillColor(243, 244, 246);
-  doc.roundedRect(margin, y, contentW, 26, 2, 2, 'F');
-  doc.setFontSize(7);
-  doc.setTextColor(107, 114, 128);
-  doc.setFont('helvetica', 'bold');
-  doc.text('DATOS DEL ALUMNO', margin + 4, y + 6);
-  doc.setFontSize(12);
-  doc.setTextColor(31, 41, 55);
-  doc.setFont('helvetica', 'bold');
-  doc.text(s.name, margin + 4, y + 14);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(107, 114, 128);
-  const meta = [(s.courses || []).join(', ') || s.course, s.phone].filter(Boolean).join('  ·  ');
-  if (meta) doc.text(meta, margin + 4, y + 21);
-
-  // Amount block
-  y += 34;
-  doc.setFillColor(224, 231, 255);
-  doc.roundedRect(margin, y, contentW, 22, 2, 2, 'F');
-  doc.setFontSize(7);
-  doc.setTextColor(107, 114, 128);
-  doc.setFont('helvetica', 'bold');
-  doc.text('IMPORTE', margin + 4, y + 6);
-  doc.setFontSize(18);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(79, 70, 229);
-  doc.text(window.App.fmtCurrency(r.amount), margin + 4, y + 17);
-
-  // Classes detail
-  y += 30;
-  doc.setFontSize(7);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(107, 114, 128);
-  doc.text('DETALLE DE CLASES', margin + 4, y);
-  
-  // Get billable line items from receipt (handles monthly quotas and discounts)
-  const lineItems = getReceiptLineItems(s, r);
-  
-  y += 6;
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(31, 41, 55);
-  
-  if (lineItems.length > 0) {
-    // Table header
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7);
-    doc.setTextColor(107, 114, 128);
-    doc.text('FECHA', margin + 4, y);
-    doc.text('TIPO', margin + 30, y);
-    doc.text('IMPORTE', margin + contentW - 4, y, { align: 'right' });
-    
-    y += 5;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(31, 41, 55);
-    
-    lineItems.forEach(item => {
-      if (y > pageH - 35) {
-        // New page if needed
-        doc.addPage();
-        y = margin;
-      }
-      
-      doc.text(item.dateLabel, margin + 4, y);
-      doc.text(item.typeLabel, margin + 30, y);
-      doc.text(window.App.fmtCurrency(item.fee), margin + contentW - 4, y, { align: 'right' });
-      y += 5;
-    });
-  } else {
-    doc.setTextColor(156, 163, 175);
-    doc.text('Sin clases registradas', margin + 4, y);
-    y += 5;
-  }
-
-  // Divider
-  y += 8;
-  doc.setDrawColor(209, 213, 219);
-  doc.setLineWidth(0.3);
-  doc.line(margin, y, pageW - margin, y);
-
-  // Footer
-  y += 7;
-  doc.setFontSize(7);
-  doc.setTextColor(156, 163, 175);
-  doc.text('Importe pendiente de pago. Este recibo no es válido sin justificante de abono.', margin, y);
-  
-  // Payment instructions
-  y += 8;
-  doc.setFontSize(7);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(107, 114, 128);
-  doc.text('INSTRUCCIONES DE PAGO', margin, y);
-  
-  y += 5;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.setTextColor(31, 41, 55);
-  const paymentText = 'El pago se hará a través de la app del banco, mediante halcash (envío a cajero, envío efectivo móvil, envío con código, etc.). En el concepto/descripción indica tu nombre y apellidos, el teléfono al que enviar el código es el 659951873. Por último recuerda enviar por Whatsapp al número anterior el código/PIN de retirada del pago y el número de teléfono desde el que se hizo el pago.';
-  const lines = doc.splitTextToSize(paymentText, contentW);
-  doc.text(lines, margin, y);
-
-  doc.save(`recibo_${r.number}_${s.name.replace(/\s+/g, '_')}.pdf`);
-
-  window.App.showToast(`Recibo ${r.number} descargado`, 'success');
+  buildInvoicePdf(s, r).save(`factura_${r.invoice.number}_${s.name.replace(/\s+/g, '_')}.pdf`);
+  window.App.showToast(`Factura ${r.invoice.number} descargada`, 'success');
 }
 
 // Cancel all pending receipts
@@ -716,7 +827,7 @@ window.App.applyReceiptFilters = function() {
         ${receipts.length > 0 ? receipts.map(r => `
           <div class="receipt-item ${r.status}" style="margin-bottom:10px">
             <div class="receipt-item-header">
-              <span class="receipt-number">Nº ${window.App.escHtml(r.number)}</span>
+              <span class="receipt-number">${window.App.escHtml(receiptTitle(r))}</span>
               <span class="receipt-status-badge ${r.status}">${statusLabels[r.status]}</span>
             </div>
             <div class="receipt-item-body">
@@ -728,18 +839,7 @@ window.App.applyReceiptFilters = function() {
               <div class="receipt-amount">${window.App.fmtCurrency(r.amount)}</div>
             </div>
             ${buildReceiptClassLines(s, r)}
-            <div class="receipt-item-actions">
-              ${r.status === 'pending' ? `
-                <button class="btn btn-sm btn-secondary" onclick="window.markReceiptAsSent('${s.id}','${r.id}')">Marcar enviado</button>
-                <button class="btn btn-sm btn-secondary" onclick="window.cancelReceipt('${s.id}','${r.id}')">Cancelar</button>
-              ` : ''}
-              ${r.status === 'sent' ? `
-                <button class="btn btn-sm btn-primary" onclick="window.markReceiptAsPaid('${s.id}','${r.id}')">Marcar pagado</button>
-              ` : ''}
-              <button class="btn btn-sm ${r.status === 'paid' ? 'btn-secondary' : 'btn-primary'}" onclick="window.downloadReceiptPdf('${s.id}','${r.id}')">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                PDF
-              </button>
+            <div class="receipt-item-actions">${receiptActionsHtml(s, r)}
             </div>
           </div>
         `).join('') : ''}
@@ -771,28 +871,25 @@ window.App.markReceiptAsSent = function(studentId, receiptId) {
   
   window.App.saveState();
   window.App.renderCurrentTab();
-  window.App.showToast(`Recibo ${r.number} marcado como enviado · saldo actualizado`, 'success');
+  window.App.showToast('Aviso marcado como enviado', 'success');
 }
 
-// Mark receipt as paid (informational only, balance already deducted when sent)
+// Marking as paid issues the numbered invoice, dated today (editable in the invoices list).
 window.App.markReceiptAsPaid = function(studentId, receiptId) {
   const s = window.App.state.students.find(s => s.id === studentId);
   if (!s) return;
   const r = (s.receipts || []).find(r => r.id === receiptId);
   if (!r) return;
   
-  if (r.status === 'pending') {
-    window.App.showToast('Debes marcar el recibo como enviado primero', 'error');
-    return;
-  }
-  
   if (r.status === 'paid') {
-    window.App.showToast('Este recibo ya está marcado como pagado', 'error');
+    window.App.showToast('Este aviso ya está marcado como pagado', 'error');
     return;
   }
   
+  const today = window.App.todayStr();
   r.status = 'paid';
-  r.paidAt = window.App.todayStr();
+  r.paidAt = today;
+  r.invoice = { number: nextInvoiceNumber(Number(today.substring(0, 4))), issueDate: today, sentAt: null };
   
   window.App.saveState();
   
@@ -802,69 +899,95 @@ window.App.markReceiptAsPaid = function(studentId, receiptId) {
   }
   
   window.App.renderCurrentTab();
-  window.App.showToast(`Recibo ${r.number} marcado como pagado`, 'success');
+  window.App.showToast(`Pagado · factura ${r.invoice.number} emitida`, 'success');
 }
 
-// Generate receipt PDF as blob (for WhatsApp API upload)
+// Issued invoices list: edit the issue date and mark as sent.
+function renderInvoicesList() {
+  const rows = [];
+  window.App.state.students.forEach(s => (s.receipts || []).forEach(r => {
+    if (r.invoice) rows.push({ s, r });
+  }));
+  rows.sort((a, b) => a.r.invoice.number.localeCompare(b.r.invoice.number));
+  const el = document.getElementById('invoices-list');
+  if (rows.length === 0) {
+    el.innerHTML = '<p class="empty-state" style="padding:20px 0;text-align:center">No hay facturas emitidas</p>';
+    return;
+  }
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+    <thead><tr style="text-align:left;border-bottom:1px solid var(--gray-200)">
+      <th>Nº</th><th>Alumno</th><th>Fecha</th><th>Importe</th><th></th></tr></thead>
+    <tbody>${rows.map(({ s, r }) => `
+      <tr style="border-bottom:1px solid var(--gray-100)">
+        <td>${window.App.escHtml(r.invoice.number)}</td>
+        <td>${window.App.escHtml(s.name)}</td>
+        <td><input type="date" value="${r.invoice.issueDate}" ${r.invoice.sentAt ? 'disabled' : ''}
+          onchange="window.updateInvoiceDate('${s.id}','${r.id}', this.value)" /></td>
+        <td>${window.App.fmtCurrency(r.amount)}</td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-sm btn-secondary" onclick="window.downloadInvoicePdf('${s.id}','${r.id}')">PDF</button>
+          ${r.invoice.sentAt
+            ? `<span style="color:var(--success)">Enviada ${window.App.fmtDate(r.invoice.sentAt)}</span>`
+            : `<button class="btn btn-sm btn-primary" onclick="window.sendInvoice('${s.id}','${r.id}')">Enviar</button>
+               <button class="btn btn-sm btn-secondary" onclick="window.markInvoiceSent('${s.id}','${r.id}')">Marcar enviada</button>`}
+        </td>
+      </tr>`).join('')}</tbody></table>`;
+}
+
+window.App.openInvoices = function() {
+  renderInvoicesList();
+  window.App.openModal('modal-invoices');
+}
+
+function findInvoice(studentId, receiptId) {
+  const s = window.App.state.students.find(s => s.id === studentId);
+  const r = s && (s.receipts || []).find(r => r.id === receiptId);
+  return r && r.invoice && !r.invoice.sentAt ? { s, r } : null;
+}
+
+window.App.updateInvoiceDate = function(studentId, receiptId, value) {
+  const found = findInvoice(studentId, receiptId);
+  if (!found || !value) { renderInvoicesList(); return; }
+  found.r.invoice.issueDate = value;
+  window.App.saveState();
+  window.App.showToast('Fecha de la factura actualizada', 'success');
+}
+
+window.App.markInvoiceSent = function(studentId, receiptId) {
+  const found = findInvoice(studentId, receiptId);
+  if (!found) return;
+  found.r.invoice.sentAt = window.App.todayStr();
+  window.App.saveState();
+  renderInvoicesList();
+}
+
+window.App.sendInvoice = async function(studentId, receiptId) {
+  const found = findInvoice(studentId, receiptId);
+  if (!found) return;
+  const { s, r } = found;
+  const phone = (s.phone || '').replace(/\D/g, '');
+  if (!phone || !window.App.state.settings?.whatsappPhoneId || !window.App.state.settings?.whatsappToken) {
+    window.App.showToast('Falta el teléfono del alumno o configurar WhatsApp Business API', 'error');
+    return;
+  }
+  try {
+    const blob = buildInvoicePdf(s, r).output('blob');
+    const filename = `factura_${r.invoice.number}.pdf`;
+    const mediaId = await uploadMediaToWhatsApp(blob, filename);
+    const caption = `Hola ${s.name.split(' ')[0]}, te envío la factura ${r.invoice.number} por el pago recibido de ${window.App.fmtCurrency(r.amount)}. Gracias.`;
+    await sendWhatsAppDocument(phone, mediaId, caption, filename);
+    r.invoice.sentAt = window.App.todayStr();
+    window.App.saveState();
+    renderInvoicesList();
+    window.App.showToast('Factura enviada por WhatsApp', 'success');
+  } catch (e) {
+    window.App.showToast(`Error enviando la factura: ${e.message}`, 'error');
+  }
+}
+
+// Generate notice PDF as blob (for WhatsApp API upload)
 async function generateReceiptPdfBlob(student, receipt) {
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF();
-  
-  // Header
-  const academyName = window.App.state.settings?.academyName || 'Academia';
-  doc.setFontSize(20);
-  doc.text(academyName, 105, 20, { align: 'center' });
-  
-  doc.setFontSize(14);
-  doc.text('RECIBO', 105, 30, { align: 'center' });
-  
-  // Receipt details
-  doc.setFontSize(11);
-  let y = 45;
-  doc.text(`Número: ${receipt.number}`, 20, y);
-  y += 8;
-  doc.text(`Fecha: ${window.App.fmtDate(receipt.generatedAt)}`, 20, y);
-  y += 8;
-  doc.text(`Alumno: ${student.name}`, 20, y);
-  y += 15;
-  
-  // Classes table
-  doc.setFontSize(12);
-  doc.text('Detalle de clases:', 20, y);
-  y += 10;
-  
-  // Table headers
-  doc.setFontSize(10);
-  doc.setFont(undefined, 'bold');
-  doc.text('Fecha', 20, y);
-  doc.text('Tipo', 60, y);
-  doc.text('Importe', 150, y);
-  y += 7;
-  
-  // Table rows
-  doc.setFont(undefined, 'normal');
-  const lineItems = getReceiptLineItems(student, receipt);
-  lineItems.forEach(item => {
-    doc.text(item.dateLabel, 20, y);
-    doc.text(item.typeLabel, 60, y);
-    doc.text(window.App.fmtCurrency(item.fee), 150, y);
-    y += 7;
-  });
-  
-  // Total
-  y += 5;
-  doc.setFont(undefined, 'bold');
-  doc.setFontSize(12);
-  doc.text('TOTAL:', 120, y);
-  doc.text(window.App.fmtCurrency(receipt.amount), 150, y);
-  
-  // Footer
-  y += 20;
-  doc.setFont(undefined, 'normal');
-  doc.setFontSize(9);
-  doc.text('Gracias por tu confianza', 105, y, { align: 'center' });
-  
-  return doc.output('blob');
+  return buildNoticePdf(student, receipt).output('blob');
 }
 
 // Upload PDF to WhatsApp Cloud API
@@ -981,15 +1104,15 @@ async function processPendingReceiptsAPI(studentsPending) {
       try {
         // Generate PDF as blob
         const pdfBlob = await generateReceiptPdfBlob(student, receipt);
-        const filename = `recibo_${receipt.number}.pdf`;
+        const filename = `aviso_${noticeMonth(receipt)}_${student.name.replace(/\s+/g, '_')}.pdf`;
         
         // Upload to WhatsApp Cloud API
         const mediaId = await uploadMediaToWhatsApp(pdfBlob, filename);
         
         // Send message with document
-        const academyName = window.App.state.settings?.academyName || 'Academia';
+        const issuerName = window.App.state.settings?.issuerName || '';
         const firstName = student.name.split(' ')[0];
-        const caption = `Hola ${firstName}, te envío el recibo ${receipt.number} por importe de ${window.App.fmtCurrency(receipt.amount)}. Gracias, ${academyName}`;
+        const caption = `Hola ${firstName}, te envío el aviso de pago de ${getMonthLabel(noticeMonth(receipt))} por importe de ${window.App.fmtCurrency(receipt.amount)}. Gracias${issuerName ? `, ${issuerName}` : ''}`;
         
         await sendWhatsAppDocument(phone, mediaId, caption, filename);
         
@@ -1002,7 +1125,7 @@ async function processPendingReceiptsAPI(studentsPending) {
         await sleep(1000);
         
       } catch (e) {
-        console.error(`Error sending receipt ${receipt.number}:`, e);
+        console.error(`Error sending notice for ${student.name}:`, e);
         window.App.showToast(`Error enviando a ${student.name}: ${e.message}`, 'error');
         failed++;
       }
@@ -1039,6 +1162,11 @@ window.App.initReceiptEvents = function() {
     btnMonthlyGroups.addEventListener('click', window.App.generateMonthlyGroupReceipts);
   }
   
+  const btnOpenInvoices = document.getElementById('btn-open-invoices');
+  if (btnOpenInvoices) {
+    btnOpenInvoices.addEventListener('click', window.App.openInvoices);
+  }
+
   const filterStatus = document.getElementById('receipt-filter-status');
   if (filterStatus) {
     filterStatus.addEventListener('change', window.App.applyReceiptFilters);
@@ -1085,6 +1213,10 @@ if (typeof window !== 'undefined') {
   window.openStudentReceipts = window.App.openStudentReceipts;
   window.cancelReceipt = window.App.cancelReceipt;
   window.downloadReceiptPdf = window.App.downloadReceiptPdf;
+  window.downloadInvoicePdf = window.App.downloadInvoicePdf;
+  window.updateInvoiceDate = window.App.updateInvoiceDate;
+  window.markInvoiceSent = window.App.markInvoiceSent;
+  window.sendInvoice = window.App.sendInvoice;
   window.markReceiptAsSent = window.App.markReceiptAsSent;
   window.markReceiptAsPaid = window.App.markReceiptAsPaid;
 }

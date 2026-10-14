@@ -8,6 +8,10 @@ window.App = window.App || {};
 // Settings modal functions
 function openSettingsModal() {
   document.getElementById('settings-academy-name').value      = window.App.state.settings?.academyName    || '';
+  document.getElementById('settings-issuer-name').value    = window.App.state.settings?.issuerName    || '';
+  document.getElementById('settings-issuer-nif').value     = window.App.state.settings?.issuerNif     || '';
+  document.getElementById('settings-issuer-address').value = window.App.state.settings?.issuerAddress || '';
+  document.getElementById('settings-issuer-phone').value   = window.App.state.settings?.issuerPhone   || '';
   document.getElementById('settings-default-individual-fee').value = window.App.state.settings?.defaultIndividualFee ?? 15;
   document.getElementById('settings-gcal-client-id').value    = window.App.state.settings?.gcalClientId   || '';
   document.getElementById('settings-gcal-calendar-id').value  = window.App.state.settings?.gcalCalendarId || 'primary';
@@ -34,6 +38,10 @@ function saveSettings() {
   
   window.App.state.settings = {
     academyName: academyName || 'Mi Academia',
+    issuerName: document.getElementById('settings-issuer-name').value.trim(),
+    issuerNif: document.getElementById('settings-issuer-nif').value.trim(),
+    issuerAddress: document.getElementById('settings-issuer-address').value.trim(),
+    issuerPhone: document.getElementById('settings-issuer-phone').value.trim(),
     defaultIndividualFee,
     gcalClientId, gcalCalendarId,
     githubToken, githubGistUrl,

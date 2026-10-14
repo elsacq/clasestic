@@ -161,6 +161,9 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             Cancelar todos los pendientes
           </button>
+          <button id="btn-open-invoices" class="btn btn-sm" style="background:#0f766e;color:white">
+            Facturas emitidas
+          </button>
           <button id="btn-download-all-receipts" class="btn btn-sm" style="background:#6366f1;color:white">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Descargar todos los PDFs
@@ -516,6 +519,22 @@
           <label for="settings-academy-name">Nombre de la academia</label>
           <input type="text" id="settings-academy-name" placeholder="Mi Academia" />
         </div>
+        <div class="form-group">
+          <label for="settings-issuer-name">Emisor: nombre y apellidos</label>
+          <input type="text" id="settings-issuer-name" />
+        </div>
+        <div class="form-group">
+          <label for="settings-issuer-nif">Emisor: NIF / DNI</label>
+          <input type="text" id="settings-issuer-nif" />
+        </div>
+        <div class="form-group">
+          <label for="settings-issuer-address">Emisor: domicilio fiscal</label>
+          <input type="text" id="settings-issuer-address" />
+        </div>
+        <div class="form-group">
+          <label for="settings-issuer-phone">Emisor: teléfono Bizum</label>
+          <input type="text" id="settings-issuer-phone" />
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div class="form-group">
             <label for="settings-default-individual-fee">Precio clase individual (€)</label>
@@ -616,6 +635,21 @@
     </div>
   </div>
 
+  <!-- MODAL: Issued invoices -->
+  <div id="modal-invoices" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box" style="max-width:760px">
+      <div class="modal-header">
+        <h3>Facturas emitidas</h3>
+        <button class="modal-close" data-modal="modal-invoices">&times;</button>
+      </div>
+      <div id="invoices-list"></div>
+      <div class="form-actions mt-8">
+        <button class="btn btn-secondary" data-modal="modal-invoices">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Load scripts in dependency order -->
   <script src="js/config.js?v=20260928"></script>
   <script src="js/utils.js?v=20260928"></script>
@@ -630,7 +664,7 @@
   <script src="js/courses.js?v=20260928"></script>
   <script src="js/calendar.js?v=20260928"></script>
   <script src="js/dashboard.js?v=20260928"></script>
-  <script src="js/receipts.js?v=20260928"></script>
+  <script src="js/receipts.js?v=20261014"></script>
   <script src="js/reports.js?v=20260928"></script>
   <script src="js/main.js?v=20260928"></script>
 </body>

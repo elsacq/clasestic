@@ -156,7 +156,7 @@ window.App.buildDebtorCard = function(s) {
         <div style="margin-top:8px; font-size:0.85rem; color:var(--text-secondary);">
           ${unpaidReceipts.map(r => `
             <div style="display:flex; justify-content:space-between; padding:6px 8px; margin:4px -8px; border-bottom:1px solid var(--border-light); background:#fff8e1; border-radius:4px;">
-              <span style="color:${statusColors[r.status]};font-weight:500;">📄 Recibo ${r.number} · ${statusLabels[r.status]}</span>
+              <span style="color:${statusColors[r.status]};font-weight:500;">📄 Aviso de pago ${r.invoice ? `(factura ${r.invoice.number})` : ''} · ${statusLabels[r.status]}</span>
               <span style="font-weight:600;">${window.App.fmtCurrency(r.amount)}</span>
             </div>
           `).join('')}
