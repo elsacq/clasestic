@@ -526,73 +526,133 @@ function buildInvoicePdf(s, r) {
   const st = window.App.state.settings || {};
   const m = 20;
   const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
   const contentW = pageW - m * 2;
   const eur = v => window.App.fmtCurrency(v);
-  let y = 25;
+  const BRAND = [79, 70, 229], INK = [31, 41, 55], MUTED = [107, 114, 128], SOFT = [243, 244, 246];
+  let y = 42;
 
-  const label = (k, v) => {
-    doc.setFont('helvetica', 'bold'); doc.text(k, m, y);
-    doc.setFont('helvetica', 'normal'); doc.text(String(v || '—'), m + doc.getTextWidth(k) + 2, y);
-    y += 6;
-  };
-
-  doc.setFontSize(14);
+  doc.setFillColor(...BRAND);
+  doc.rect(0, 0, pageW, 34, 'F');
+  doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.text(`RECIBO / FACTURA SIMPLIFICADA Nº: ${r.invoice.number}`, m, y);
-  y += 9;
-  doc.setFontSize(10);
-  label('Fecha de emisión:', window.App.fmtDate(r.invoice.issueDate));
-
-  y += 4;
-  doc.setFont('helvetica', 'bold');
-  doc.text('DATOS DEL EMISOR (PROFESOR):', m, y); y += 6;
-  label('Nombre y Apellidos:', st.issuerName);
-  label('NIF / DNI:', st.issuerNif);
-  label('Domicilio fiscal:', st.issuerAddress);
-
-  y += 4;
-  doc.setFont('helvetica', 'bold');
-  doc.text('DATOS DEL RECEPTOR (ALUMNO):', m, y); y += 6;
-  label('Nombre del alumno:', s.name);
-
-  y += 2;
-  doc.setDrawColor(150);
-  doc.line(m, y, pageW - m, y);
-  y += 7;
-
-  const colPrice = m + contentW - 62, colVat = m + contentW - 34, colTotal = m + contentW;
-  const conceptW = colPrice - m - 22;
-  doc.setFont('helvetica', 'bold');
-  doc.text('Concepto', m, y);
-  doc.text('Precio unitario', colPrice, y, { align: 'right' });
-  doc.text('IVA', colVat, y, { align: 'center' });
-  doc.text('Total', colTotal, y, { align: 'right' });
-  y += 6;
-
+  doc.setFontSize(16);
+  doc.text('FACTURA SIMPLIFICADA', m, 14);
   doc.setFont('helvetica', 'normal');
-  getReceiptLineItems(s, r).forEach(item => {
-    const when = item.dateLabel === 'Mensual' ? '' : ` (${item.dateLabel})`;
-    const lines = doc.splitTextToSize(`Servicios de enseñanza y apoyo escolar: ${item.typeLabel}${when}`, conceptW);
-    if (y + lines.length * 5 > 250) { doc.addPage(); y = 25; }
-    doc.text(lines, m, y);
-    doc.text(eur(item.fee), colPrice, y, { align: 'right' });
-    doc.text('0% (Exento)', colVat, y, { align: 'center' });
+  doc.setFontSize(9);
+  doc.text(`Nº ${r.invoice.number}`, m, 23);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text(window.App.fmtDate(r.invoice.issueDate), pageW - m, 17, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text('Fecha de emisión', pageW - m, 23, { align: 'right' });
+
+  const issuerFields = [
+    ['NOMBRE Y APELLIDOS', st.issuerName],
+    ['NIF / DNI', st.issuerNif],
+    ['DOMICILIO FISCAL', st.issuerAddress],
+  ].map(([label, value]) => ({
+    label,
+    lines: doc.splitTextToSize(String(value || '—'), contentW - 8),
+  }));
+  const issuerBoxHeight = 12 + issuerFields.reduce((height, field) => height + 8 + field.lines.length * 4, 0);
+  doc.setFillColor(...SOFT);
+  doc.roundedRect(m, y, contentW, issuerBoxHeight, 2, 2, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  doc.setTextColor(...BRAND);
+  doc.text('DATOS DEL EMISOR', m + 4, y + 6);
+  let issuerY = y + 12;
+  issuerFields.forEach(field => {
     doc.setFont('helvetica', 'bold');
-    doc.text(eur(item.fee), colTotal, y, { align: 'right' });
+    doc.setFontSize(7);
+    doc.setTextColor(...MUTED);
+    doc.text(field.label, m + 4, issuerY);
     doc.setFont('helvetica', 'normal');
-    y += lines.length * 5 + 3;
+    doc.setFontSize(9);
+    doc.setTextColor(...INK);
+    doc.text(field.lines, m + 4, issuerY + 4);
+    issuerY += 8 + field.lines.length * 4;
+  });
+  y += issuerBoxHeight + 9;
+
+  const studentNameLines = doc.splitTextToSize(s.name, contentW - 8);
+  const studentBoxHeight = Math.max(21, studentNameLines.length * 5 + 13);
+  doc.setFillColor(...SOFT);
+  doc.roundedRect(m, y, contentW, studentBoxHeight, 2, 2, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  doc.setTextColor(...BRAND);
+  doc.text('DATOS DEL RECEPTOR · ALUMNO', m + 4, y + 6);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(...INK);
+  doc.text(studentNameLines, m + 4, y + 14);
+  y += studentBoxHeight + 9;
+
+  const tableTop = y;
+  const colConcept = m + 3;
+  const colPrice = m + 107;
+  const colVat = m + 132;
+  const colTotal = m + contentW - 3;
+  const conceptW = colPrice - colConcept - 5;
+  doc.setFillColor(224, 231, 255);
+  doc.roundedRect(m, tableTop, contentW, 10, 1.5, 1.5, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  doc.setTextColor(...BRAND);
+  doc.text('CONCEPTO', colConcept, tableTop + 6.5);
+  doc.text('PRECIO UNITARIO', colPrice, tableTop + 6.5, { align: 'right' });
+  doc.text('IVA', colVat, tableTop + 6.5, { align: 'center' });
+  doc.text('TOTAL', colTotal, tableTop + 6.5, { align: 'right' });
+  y = tableTop + 16;
+
+  getReceiptLineItems(s, r).forEach((item, index) => {
+    const period = item.dateLabel === 'Mensual' ? getMonthLabel(noticeMonth(r)) : item.dateLabel;
+    const concept = `${item.typeLabel} · ${period}`;
+    const lines = doc.splitTextToSize(concept, conceptW);
+    const rowHeight = Math.max(10, lines.length * 5 + 4);
+    if (y + rowHeight > pageH - 78) { doc.addPage(); y = 25; }
+    if (index % 2 === 1) {
+      doc.setFillColor(249, 250, 251);
+      doc.rect(m, y - 5, contentW, rowHeight, 'F');
+    }
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...INK);
+    doc.text(lines, colConcept, y);
+    doc.text(eur(item.fee), colPrice, y, { align: 'right' });
+    doc.setFontSize(8);
+    doc.text('0%', colVat, y, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text(eur(item.fee), colTotal, y, { align: 'right' });
+    y += rowHeight;
+    doc.setDrawColor(229, 231, 235);
+    doc.line(m, y, m + contentW, y);
+    y += 3;
   });
 
-  doc.line(m, y, pageW - m, y);
-  y += 8;
+  if (y + 42 > pageH - 22) { doc.addPage(); y = 25; }
+  doc.setFillColor(...SOFT);
+  doc.roundedRect(m, y, contentW, 14, 1.5, 1.5, 'F');
   doc.setFont('helvetica', 'bold');
-  doc.text(`IMPORTE TOTAL RECIBIDO: ${eur(r.amount)}`, m, y);
-  y += 7;
-  label('Método de cobro:', 'Bizum');
-  y += 2;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text(doc.splitTextToSize('Factura exenta de IVA en virtud del Artículo 20.Uno.9º de la Ley 37/1992, de 28 de diciembre, del Impuesto sobre el Valor Añadido.', contentW), m, y);
+  doc.setFontSize(10);
+  doc.setTextColor(...INK);
+  doc.text('IMPORTE TOTAL RECIBIDO', m + 4, y + 9);
+  doc.setFontSize(12);
+  doc.setTextColor(...BRAND);
+  doc.text(eur(r.amount), m + contentW - 4, y + 9, { align: 'right' });
+  y += 22;
+
+  doc.setDrawColor(209, 213, 219);
+  doc.line(m, pageH - 22, pageW - m, pageH - 22);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...MUTED);
+  const exemption = doc.splitTextToSize('Factura exenta de IVA en virtud del Artículo 20.Uno.9º de la Ley 37/1992, de 28 de diciembre, del Impuesto sobre el Valor Añadido.', contentW);
+  doc.text(exemption, m, pageH - 16);
 
   return doc;
 }
