@@ -20,8 +20,20 @@ function noticeMonth(r) {
 }
 
 function receiptTitle(r) {
-  return `Aviso de pago · ${getMonthLabel(noticeMonth(r))}${r.invoice ? ` · Factura ${r.invoice.number}` : ''}`;
+  const number = r.invoice?.number || r.number;
+  return `Aviso de pago · ${getMonthLabel(noticeMonth(r))}${number ? ` · Factura ${number}` : ''}`;
 }
+
+window.App.migratePaidReceiptNumbers = function() {
+  let changed = false;
+  window.App.state.students.forEach(s => (s.receipts || []).forEach(r => {
+    if (r.invoice?.number && !r.number) {
+      r.number = r.invoice.number;
+      changed = true;
+    }
+  }));
+  return changed;
+};
 
 function receiptActionsHtml(s, r) {
   return `
@@ -137,7 +149,7 @@ function processGenerateAllReceipts(students) {
 }
 
 // Generates one advance receipt per student for the current month's monthly-billing groups,
-// one line per course (normal rate, or 2nd-subject rate when in several courses).
+// one course-rate line per course and a separate line for each group with its own rate.
 window.App.generateMonthlyGroupReceipts = function() {
   const month = document.getElementById('monthly-group-receipt-month')?.value || window.App.todayStr().substring(0, 7);
   const monthLabel = getMonthLabel(month);
@@ -146,26 +158,56 @@ window.App.generateMonthlyGroupReceipts = function() {
   window.App.state.students.filter(s => s.active !== false).forEach(s => {
     const groups = window.App.state.groups.filter(g =>
       g.billingMode === 'monthly' && g.active !== false && g.courseId && (g.studentIds || []).includes(s.id));
-    const billed = new Set();
+    const groupsById = new Map(groups.map(g => [g.id, g]));
+    const billedGroupIds = new Set();
+    const billedLegacyCourseIds = new Set();
     (s.receipts || []).forEach(r => (r.monthlyItems || []).forEach(i => {
-      if (i.month === month) billed.add(i.courseId);
+      if (i.month !== month) return;
+      const billedGroup = groupsById.get(i.groupId);
+      if (i.groupId && (!hasMonthlyFeeOverride(billedGroup) ||
+          Number(i.fee) === Number(billedGroup.monthlyFeeOverride))) {
+        billedGroupIds.add(i.groupId);
+      }
+      (i.extraGroupIds || []).forEach(id => {
+        if (!hasMonthlyFeeOverride(groupsById.get(id))) billedGroupIds.add(id);
+      });
+      if (!i.groupId) billedLegacyCourseIds.add(i.courseId);
     }));
     const items = [];
+
+    const groupsByCourse = new Map();
     groups.forEach(g => {
-      if (billed.has(g.courseId)) return;
-      billed.add(g.courseId);
-      const course = window.App.state.courses.find(c => c.id === g.courseId);
-      if (!course) return;
-      items.push({
-        month, groupId: g.id, courseId: course.id, courseName: course.name,
-        label: `Clases grupales ${monthLabel} ${course.name}`,
-        fee: getStudentCourseFee(s, course),
-      });
+      if (!groupsByCourse.has(g.courseId)) groupsByCourse.set(g.courseId, []);
+      groupsByCourse.get(g.courseId).push(g);
     });
-    // Groups sharing a course are covered by one quota; keep all group ids for dedupe.
-    groups.forEach(g => {
-      const item = items.find(i => i.courseId === g.courseId);
-      if (item && item.groupId !== g.id) (item.extraGroupIds = item.extraGroupIds || []).push(g.id);
+
+    groupsByCourse.forEach((courseGroups, courseId) => {
+      const course = window.App.state.courses.find(c => c.id === courseId);
+      if (!course) return;
+
+      const overrideGroups = courseGroups.filter(hasMonthlyFeeOverride);
+      const regularGroups = courseGroups.filter(g => !hasMonthlyFeeOverride(g));
+      const unbilledRegularGroups = billedLegacyCourseIds.has(courseId)
+        ? []
+        : regularGroups.filter(g => !billedGroupIds.has(g.id));
+
+      if (unbilledRegularGroups.length) {
+        const [group, ...coveredGroups] = unbilledRegularGroups;
+        items.push({
+          month, groupId: group.id, courseId: course.id, courseName: course.name,
+          label: `Clases grupales ${monthLabel} ${course.name}`,
+          fee: getStudentCourseFee(s, course),
+          ...(coveredGroups.length ? { extraGroupIds: coveredGroups.map(g => g.id) } : {}),
+        });
+      }
+
+      overrideGroups.filter(g => !billedGroupIds.has(g.id)).forEach(g => {
+        items.push({
+          month, groupId: g.id, courseId: course.id, courseName: course.name,
+          label: `Clases grupales ${monthLabel} ${course.name} · ${g.name}`,
+          fee: Number(g.monthlyFeeOverride),
+        });
+      });
     });
     if (items.length) plans.push({ s, items });
   });
@@ -207,6 +249,11 @@ window.App.generateMonthlyGroupReceipts = function() {
 function computeReceiptAmount(s, classIds) {
   const amount = getReceiptLineItems(s, { classIds }).reduce((sum, item) => sum + item.fee, 0);
   return Math.round(amount * 100) / 100;
+}
+
+function hasMonthlyFeeOverride(group) {
+  return group.monthlyFeeOverride != null && group.monthlyFeeOverride !== '' &&
+    Number.isFinite(Number(group.monthlyFeeOverride));
 }
 
 function doGenerateReceipt(s, silent = false) {
@@ -272,7 +319,8 @@ window.App.openStudentReceipts = function(studentId) {
 // simultaneously (based on the student's actual monthly-billing group memberships).
 function getStudentCourseFee(s, course) {
   if (!course) return 0;
-  const studentGroups = window.App.state.groups.filter(g => g.billingMode === 'monthly' && (g.studentIds || []).includes(s.id));
+  const studentGroups = window.App.state.groups.filter(g =>
+    g.billingMode === 'monthly' && !hasMonthlyFeeOverride(g) && (g.studentIds || []).includes(s.id));
   const monthlyCourseIds = [...new Set(studentGroups.map(g => g.courseId).filter(Boolean))];
 
   if (monthlyCourseIds.length <= 1) return parseFloat(course.monthlyFeeNormal) || 0;
@@ -305,9 +353,10 @@ function getReceiptLineItems(s, r) {
       if (monthlyShown.has(monthKey)) return; // already billed this group+month
       monthlyShown.add(monthKey);
       const course = window.App.state.courses.find(co => co.id === group.courseId);
-      const fee = getStudentCourseFee(s, course);
+      const fee = hasMonthlyFeeOverride(group) ? Number(group.monthlyFeeOverride) : getStudentCourseFee(s, course);
       const courseLabel = course ? course.name : group.name;
-      items.push({ dateLabel: getMonthLabel(c.date.substring(0, 7)), typeLabel: `Cuota mensual · ${courseLabel}`, fee, courseName: course?.name });
+      const groupLabel = hasMonthlyFeeOverride(group) ? ` · ${group.name}` : '';
+      items.push({ dateLabel: getMonthLabel(c.date.substring(0, 7)), typeLabel: `Cuota mensual · ${courseLabel}${groupLabel}`, fee, courseName: course?.name });
       return;
     }
 
@@ -949,7 +998,9 @@ window.App.markReceiptAsPaid = function(studentId, receiptId) {
   const today = window.App.todayStr();
   r.status = 'paid';
   r.paidAt = today;
-  r.invoice = { number: nextInvoiceNumber(Number(today.substring(0, 4))), issueDate: today, sentAt: null };
+  const invoiceNumber = nextInvoiceNumber(Number(today.substring(0, 4)));
+  r.number = invoiceNumber;
+  r.invoice = { number: invoiceNumber, issueDate: today, sentAt: null };
   
   window.App.saveState();
   

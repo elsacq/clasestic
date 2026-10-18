@@ -476,7 +476,11 @@
           <select id="group-course">
             <option value="">– Selecciona un curso –</option>
           </select>
-          <p class="form-hint">La cuota mensual (normal / 2ª asignatura) se define en el curso.</p>
+          <div class="form-group" style="margin-top:12px;margin-bottom:0">
+            <label for="group-monthly-fee">Tarifa mensual propia del grupo (€)</label>
+            <input type="number" id="group-monthly-fee" step="0.01" min="0" placeholder="Usar tarifa del curso" />
+          </div>
+          <p class="form-hint">Déjala vacía para usar la tarifa del curso (normal / 2ª asignatura). Indica una cantidad para una convocatoria, intensivo u otro grupo con precio propio; el nombre del grupo es solo descriptivo.</p>
         </div>
         <div class="form-group">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -664,8 +668,8 @@
   <script src="js/courses.js?v=20260928"></script>
   <script src="js/calendar.js?v=20260928"></script>
   <script src="js/dashboard.js?v=20260928"></script>
-  <script src="js/receipts.js?v=20261014"></script>
+  <script src="js/receipts.js?v=20261018"></script>
   <script src="js/reports.js?v=20260928"></script>
-  <script src="js/main.js?v=20260928"></script>
+  <script src="js/main.js?v=20261018"></script>
 </body>
 </html>

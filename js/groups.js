@@ -42,7 +42,9 @@ window.App.buildGroupCard = function(g) {
   const isMonthly = g.billingMode === 'monthly';
   const linkedCourse = isMonthly ? window.App.state.courses.find(c => c.id === g.courseId) : null;
   const feeStr = isMonthly
-    ? (linkedCourse ? `${window.App.fmtCurrency(linkedCourse.monthlyFeeNormal || 0)}/mes · ${window.App.fmtCurrency(linkedCourse.monthlyFeeSecondSubject || 0)}/mes 2ª asig.` : 'Sin curso vinculado')
+    ? (g.monthlyFeeOverride != null
+      ? `${window.App.fmtCurrency(g.monthlyFeeOverride)}/mes · tarifa propia`
+      : (linkedCourse ? `${window.App.fmtCurrency(linkedCourse.monthlyFeeNormal || 0)}/mes · ${window.App.fmtCurrency(linkedCourse.monthlyFeeSecondSubject || 0)}/mes 2ª asig.` : 'Sin curso vinculado'))
     : (g.fee != null ? `${parseFloat(g.fee).toFixed(2).replace('.', ',')} €/alumno` : 'Sin tarifa');
   const isActive = g.active !== false; // Default to active if not set
   
@@ -89,6 +91,7 @@ window.App.openNewGroup = function() {
   document.getElementById('group-description').value = '';
   document.getElementById('group-fee').value = '';
   document.getElementById('group-billing-mode').value = 'perClass';
+  document.getElementById('group-monthly-fee').value = '';
   populateGroupCourseSelect('');
   window.App.toggleGroupMonthlyFeeField();
   document.getElementById('group-active').checked = true;
@@ -122,6 +125,7 @@ window.App.openEditGroup = function(groupId) {
   document.getElementById('group-fee').value = g.fee != null ? g.fee : '';
   document.getElementById('group-billing-mode').value = g.billingMode === 'monthly' ? 'monthly' : 'perClass';
   populateGroupCourseSelect(g.courseId || '');
+  document.getElementById('group-monthly-fee').value = g.monthlyFeeOverride ?? '';
   window.App.toggleGroupMonthlyFeeField();
   document.getElementById('group-active').checked = g.active !== false;
   const search = document.getElementById('group-students-search');
@@ -139,6 +143,8 @@ window.App.saveGroup = function(e) {
   const fee = parseFloat(document.getElementById('group-fee').value);
   const billingMode = document.getElementById('group-billing-mode').value === 'monthly' ? 'monthly' : 'perClass';
   const courseId = document.getElementById('group-course').value || null;
+  const monthlyFeeInput = document.getElementById('group-monthly-fee').value.trim();
+  const monthlyFeeOverride = monthlyFeeInput === '' ? null : Number(monthlyFeeInput);
   const active = document.getElementById('group-active').checked;
   
   if (!name) {
@@ -153,6 +159,10 @@ window.App.saveGroup = function(e) {
     window.App.showToast('Selecciona el curso vinculado para la cuota mensual', 'error');
     return;
   }
+  if (billingMode === 'monthly' && monthlyFeeOverride !== null && (!Number.isFinite(monthlyFeeOverride) || monthlyFeeOverride < 0)) {
+    window.App.showToast('La tarifa mensual propia debe ser un número igual o mayor que cero', 'error');
+    return;
+  }
   
   const selectedStudents = window.App.getGroupPickerSelected();
   
@@ -165,6 +175,7 @@ window.App.saveGroup = function(e) {
       g.fee = fee;
       g.billingMode = billingMode;
       g.courseId = billingMode === 'monthly' ? courseId : null;
+      g.monthlyFeeOverride = billingMode === 'monthly' ? monthlyFeeOverride : null;
       g.active = active;
       g.studentIds = selectedStudents;
       window.App.showToast('Grupo actualizado', 'success');
@@ -178,6 +189,7 @@ window.App.saveGroup = function(e) {
       fee,
       billingMode,
       courseId: billingMode === 'monthly' ? courseId : null,
+      monthlyFeeOverride: billingMode === 'monthly' ? monthlyFeeOverride : null,
       active,
       studentIds: selectedStudents,
     });

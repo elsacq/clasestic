@@ -9,7 +9,7 @@ Gestionar de forma integral una academia de clases particulares, permitiendo el 
 ## ✨ Funcionalidades
 
 - **Gestión de Estudiantes**: Alta, edición, eliminación y seguimiento de saldos
-- **Gestión de Grupos**: Organización de alumnos en grupos para clases colectivas
+- **Gestión de Grupos**: Organización de alumnos en grupos para clases colectivas; las cuotas mensuales pueden usar la tarifa del curso o una tarifa propia por grupo
 - **Gestión de Clases**: Clases individuales y grupales con control de horarios y cuotas
 - **Gestión de Cursos**: Etiquetado informativo de alumnos por curso
 - **Calendario**: Vista mensual con todas las clases programadas
