@@ -48,6 +48,68 @@ function updateFeeForDuration() {
   document.getElementById('class-fee').value = adjustedFee.toFixed(2);
 }
 
+function updateClassBonusSelector(preferredBonusId, defaultToAvailable = false) {
+  const wrap = document.getElementById('class-bonus-selector');
+  const select = document.getElementById('class-bonus');
+  const type = document.getElementById('class-type').value;
+  const studentId = window.App._lockedStudentId || getPickerSelected()[0];
+  const classId = document.getElementById('class-id').value;
+  const previousBonusId = select.value;
+
+  if (type !== 'individual' || !studentId) {
+    wrap.classList.add('hidden');
+    select.innerHTML = '<option value="">Cobrar la clase normalmente</option>';
+    select.value = '';
+    select.disabled = true;
+    return;
+  }
+
+  const bonuses = window.App.getAvailableIndividualBonuses(studentId, classId);
+  select.innerHTML = '<option value="">Cobrar la clase normalmente</option>' +
+    bonuses.map(b => `<option value="${b.id}">Bono ${window.App.escHtml(b.monthLabel)} · ${b.remaining}/${b.sessionsTotal} sesiones disponibles</option>`).join('');
+  select.disabled = false;
+  wrap.classList.remove('hidden');
+
+  const requestedId = preferredBonusId === undefined ? previousBonusId : preferredBonusId;
+  const selectedBonus = bonuses.find(b => b.id === requestedId);
+  const defaultBonus = defaultToAvailable && preferredBonusId === undefined ? bonuses[0] : null;
+  select.value = (selectedBonus || defaultBonus)?.id || '';
+  applyClassBonusSelection();
+}
+
+function applyClassBonusSelection() {
+  const select = document.getElementById('class-bonus');
+  const feeInput = document.getElementById('class-fee');
+  const usingBonus = Boolean(select.value) && !select.disabled;
+  const wasUsingBonus = Boolean(window.App._classWasUsingBonus);
+
+  feeInput.disabled = usingBonus;
+  if (usingBonus) {
+    feeInput.value = '0.00';
+    window.App._classWasUsingBonus = true;
+    return;
+  }
+
+  if (wasUsingBonus) {
+    window.App._classWasUsingBonus = false;
+    userEditedFee = false;
+    updateFeeForDuration();
+  }
+}
+
+function getClassBonusSessionInfo(c) {
+  if (!c.individualBonusId || c.type !== 'individual') return null;
+  const studentId = c.studentIds?.[0];
+  const bonus = studentId && window.App.getStudentIndividualBonuses(studentId)
+    .find(b => b.id === c.individualBonusId);
+  if (!bonus) return null;
+  const assigned = window.App.state.classes
+    .filter(cl => cl.type === 'individual' && cl.individualBonusId === bonus.id)
+    .sort((a, b) => (a.date + a.time + a.id).localeCompare(b.date + b.time + b.id));
+  const sessionNumber = assigned.findIndex(cl => cl.id === c.id) + 1;
+  return sessionNumber > 0 ? { sessionNumber, sessionsTotal: bonus.sessionsTotal } : null;
+}
+
 // Show and reset the "repeat weekly" option (only offered when creating a new class)
 function resetRepeatWeeklyOption() {
   const selector = document.getElementById('class-repeat-selector');
@@ -126,6 +188,7 @@ function buildClassCard(c) {
       default: return '1h';
     }
   })() : '1h';
+  const bonusSession = getClassBonusSessionInfo(c);
   
   return `
     <div class="class-card" onclick="window.openClassDetail('${c.id}')">
@@ -145,6 +208,7 @@ function buildClassCard(c) {
         </div>
         <div style="text-align:right">
           <div class="class-fee">${window.App.fmtCurrency(c.fee)}<small style="font-weight:400;color:var(--gray-400)"> /alumno</small></div>
+          ${bonusSession ? `<div style="font-size:0.75rem;font-weight:700;color:var(--primary)">Bono · sesión ${bonusSession.sessionNumber}/${bonusSession.sessionsTotal}</div>` : ''}
           ${c.type === 'grupal' ? `<div style="font-size:0.75rem;font-weight:700;color:var(--gray-600)">Total: ${window.App.fmtCurrency(c.fee * c.studentIds.length)}</div>` : ''}
         </div>
       </div>
@@ -186,6 +250,8 @@ window.App.openNewClass = function(prefillDate, lockedStudentId) {
   // Set default fee
   const defaultFee = window.App.state.settings?.defaultIndividualFee || 15;
   document.getElementById('class-fee').value = defaultFee;
+  document.getElementById('class-fee').disabled = false;
+  window.App._classWasUsingBonus = false;
   
   // Add listener for duration changes
   document.getElementById('class-duration').onchange = updateFeeForDuration;
@@ -193,6 +259,7 @@ window.App.openNewClass = function(prefillDate, lockedStudentId) {
   populateGroupSelect('');
   buildStudentsPicker(lockedStudentId ? [lockedStudentId] : []);
   updateClassTypeUI('individual');
+  updateClassBonusSelector(undefined, true);
   resetRepeatWeeklyOption();
   
   // Add listener for date changes
@@ -243,6 +310,8 @@ window.App.openNewClassFromGroup = function(groupId) {
   const baseFee = g.fee != null ? g.fee : (window.App.state.settings?.defaultGroupFee || 10);
   const multiplier = getDurationMultiplier(60); // 60 = default 1 hour
   document.getElementById('class-fee').value = (baseFee * multiplier).toFixed(2);
+  document.getElementById('class-fee').disabled = false;
+  window.App._classWasUsingBonus = false;
   
   // Add listener for duration changes
   document.getElementById('class-duration').onchange = updateFeeForDuration;
@@ -285,6 +354,8 @@ window.App.openEditClass = function(classId) {
   timeInput.value = c.time;
   document.getElementById('class-duration').value = c.duration || 60; // Default to 60 if not set
   document.getElementById('class-fee').value = c.fee;
+  document.getElementById('class-fee').disabled = false;
+  window.App._classWasUsingBonus = Boolean(c.individualBonusId);
   
   // Add listener for duration changes (even in edit mode, allow user to adjust fee by duration)
   document.getElementById('class-duration').onchange = function() {
@@ -304,6 +375,7 @@ window.App.openEditClass = function(classId) {
   populateGroupSelect(c.groupId || '');
   buildStudentsPicker(c.studentIds);
   updateClassTypeUI(c.type);
+  updateClassBonusSelector(c.individualBonusId || '', false);
   hideRepeatWeeklyOption();
   
   // Add listener for date changes
@@ -384,6 +456,7 @@ function buildStudentsPicker(selectedIds) {
         picker.querySelectorAll('.picker-student').forEach(p => p.classList.remove('selected'));
         el.classList.add('selected');
         input.checked = true;
+        updateClassBonusSelector(undefined, true);
       } else {
         el.classList.toggle('selected');
         input.checked = el.classList.contains('selected');
@@ -404,6 +477,14 @@ function updateClassTypeUI(type) {
   const groupSelector = document.getElementById('class-group-selector');
   const studentsSelector = document.getElementById('class-students-selector');
   const feeInput = document.getElementById('class-fee');
+  const bonusSelect = document.getElementById('class-bonus');
+  const wasUsingBonus = Boolean(bonusSelect.value);
+  if (type !== 'individual' && wasUsingBonus) {
+    bonusSelect.value = '';
+    window.App._classWasUsingBonus = true;
+    userEditedFee = false;
+  }
+  feeInput.disabled = false;
   const duration = document.getElementById('class-duration').value;
   const multiplier = getDurationMultiplier(duration);
   
@@ -427,6 +508,7 @@ function updateClassTypeUI(type) {
   }
   
   updateClassHint(type);
+  updateClassBonusSelector(type === 'individual' ? bonusSelect.value : '', false);
 }
 
 function populateGroupSelect(selectedValue) {
@@ -478,6 +560,7 @@ window.App.saveClass = function(e) {
   const duration = parseInt(document.getElementById('class-duration').value) || 60;
   const fee    = parseFloat(document.getElementById('class-fee').value);
   const groupId = document.getElementById('class-group').value;
+  const selectedBonusId = document.getElementById('class-bonus').value;
   const repeatWeekly = !id && document.getElementById('class-repeat-weekly').checked;
   const repeatUntil  = document.getElementById('class-repeat-until').value;
 
@@ -489,6 +572,16 @@ window.App.saveClass = function(e) {
     window.App.showToast('La fecha de repetición debe ser posterior a la fecha de la clase', 'error');
     return;
   }
+  if (repeatWeekly && selectedBonusId) {
+    window.App.showToast('No se puede repetir una clase con bono; crea cada sesión para numerarla correctamente', 'error');
+    return;
+  }
+  if (selectedBonusId && (type !== 'individual' || studentIds.length !== 1 ||
+      !window.App.getAvailableIndividualBonuses(studentIds[0], id).some(b => b.id === selectedBonusId))) {
+    window.App.showToast('El bono seleccionado ya no tiene sesiones disponibles o no pertenece a este alumno', 'error');
+    return;
+  }
+  const savedFee = selectedBonusId ? 0 : fee;
 
   // Check for time conflict (same date+time, different id)
   const conflict = window.App.state.classes.find(c => c.date === date && c.time === time && c.id !== id);
@@ -505,12 +598,18 @@ window.App.saveClass = function(e) {
     const existing = window.App.state.classes.find(c => c.id === id);
     if (existing) {
       // Update class (balance is calculated dynamically, no need to adjust)
-      Object.assign(existing, { type, date, time, duration, fee, studentIds, groupId: groupId || null });
+      Object.assign(existing, {
+        type, date, time, duration, fee: savedFee, studentIds, groupId: groupId || null,
+        individualBonusId: selectedBonusId || null,
+      });
     }
   } else {
     // New class (balance is calculated dynamically, no need to adjust)
     const newId = window.App.uid();
-    window.App.state.classes.push({ id: newId, type, date, time, duration, fee, studentIds, groupId: groupId || null });
+    window.App.state.classes.push({
+      id: newId, type, date, time, duration, fee: savedFee, studentIds, groupId: groupId || null,
+      individualBonusId: selectedBonusId || null,
+    });
     createdIds.push(newId);
 
     if (repeatWeekly) {
@@ -584,6 +683,7 @@ window.App.openClassDetail = function(classId) {
       default: return '1 hora';
     }
   })() : '1 hora';
+  const bonusSession = getClassBonusSessionInfo(c);
 
   document.getElementById('class-detail-content').innerHTML = `
     <div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value"><span class="class-type-badge ${c.type}">${c.type}</span></span></div>
@@ -592,6 +692,7 @@ window.App.openClassDetail = function(classId) {
     <div class="detail-row"><span class="detail-label">Duración</span><span class="detail-value">${durationText}</span></div>
     <div class="detail-row"><span class="detail-label">Curso</span><span class="detail-value">${window.App.escHtml(c.course || '–')}</span></div>
     <div class="detail-row"><span class="detail-label">Cuota/alumno</span><span class="detail-value" style="font-weight:700;color:var(--primary)">${window.App.fmtCurrency(c.fee)}</span></div>
+    ${bonusSession ? `<div class="detail-row"><span class="detail-label">Bono individual</span><span class="detail-value">Sesión ${bonusSession.sessionNumber} de ${bonusSession.sessionsTotal}</span></div>` : ''}
     ${c.type === 'grupal' ? `<div class="detail-row"><span class="detail-label">Total clase</span><span class="detail-value" style="font-weight:700;color:var(--gray-800)">${window.App.fmtCurrency(c.fee * c.studentIds.length)}</span></div>` : ''}
     <div class="detail-row"><span class="detail-label">Alumnos</span><span class="detail-value">${studentChips}</span></div>
   `;
@@ -639,6 +740,7 @@ window.App.initClassEvents = function() {
   document.getElementById('btn-new-class').addEventListener('click', () => window.App.openNewClass());
   document.getElementById('form-class').addEventListener('submit', window.App.saveClass);
   document.getElementById('class-type').addEventListener('change', (e) => updateClassTypeUI(e.target.value));
+  document.getElementById('class-bonus').addEventListener('change', applyClassBonusSelection);
   document.getElementById('class-group').addEventListener('change', onGroupChange);
   document.getElementById('class-filter-date').addEventListener('change', window.App.applyClassFilters);
   document.getElementById('class-filter-type').addEventListener('change', window.App.applyClassFilters);

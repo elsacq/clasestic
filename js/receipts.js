@@ -63,7 +63,8 @@ window.App.generateReceipt = function(studentId) {
   const billedClassIds = new Set();
   (s.receipts || []).forEach(r => (r.classIds || []).forEach(id => billedClassIds.add(id)));
   const unbilledClasses = window.App.state.classes.filter(
-    c => c.date <= today && c.studentIds.includes(studentId) && !billedClassIds.has(c.id) && !isAdvanceBilled(s, c)
+    c => c.date <= today && c.studentIds.includes(studentId) && !c.individualBonusId &&
+      !billedClassIds.has(c.id) && !isAdvanceBilled(s, c)
   );
   if (unbilledClasses.length === 0) {
     window.App.showToast('Este alumno no tiene clases pendientes de facturar', 'error');
@@ -101,6 +102,7 @@ window.App.generateAllReceipts = function() {
     const unbilledClasses = window.App.state.classes.filter(c => 
       c.date <= today && 
       c.studentIds.includes(s.id) && 
+      !c.individualBonusId &&
       !billedClassIds.has(c.id) &&
       !isAdvanceBilled(s, c)
     );
@@ -244,6 +246,91 @@ window.App.generateMonthlyGroupReceipts = function() {
   );
 }
 
+window.App.getStudentIndividualBonuses = function(studentId) {
+  const student = window.App.state.students.find(s => s.id === studentId);
+  if (!student) return [];
+
+  return (student.receipts || []).filter(r => r.status === 'paid').flatMap(r =>
+    (r.monthlyItems || [])
+      .filter(item => item.type === 'individualBonus')
+      .map(item => {
+        const used = window.App.state.classes.filter(c =>
+          c.type === 'individual' && c.individualBonusId === item.bonusId &&
+          c.studentIds.includes(studentId)).length;
+        return {
+          id: item.bonusId,
+          month: item.month,
+          monthLabel: getMonthLabel(item.month),
+          sessionsTotal: item.sessions,
+          used,
+          remaining: Math.max(0, item.sessions - used),
+          amount: item.fee,
+          receiptId: r.id,
+        };
+      })
+  ).sort((a, b) => a.month.localeCompare(b.month) || a.id.localeCompare(b.id));
+};
+
+window.App.getAvailableIndividualBonuses = function(studentId, excludeClassId = '') {
+  return window.App.getStudentIndividualBonuses(studentId).flatMap(bonus => {
+    const currentClassUsesBonus = excludeClassId &&
+      window.App.state.classes.some(c => c.id === excludeClassId && c.individualBonusId === bonus.id);
+    if (currentClassUsesBonus) return [{ ...bonus, remaining: Math.min(bonus.remaining + 1, bonus.sessionsTotal) }];
+    if (bonus.remaining > 0) return [bonus];
+    return [];
+  });
+};
+
+window.App.generateIndividualBonusReceipts = function() {
+  const month = document.getElementById('monthly-group-receipt-month')?.value || window.App.todayStr().substring(0, 7);
+  const monthLabel = getMonthLabel(month);
+  const plans = window.App.state.students
+    .filter(s => s.active !== false && Number.isInteger(Number(s.individualBonusConfig?.sessions)) &&
+      Number(s.individualBonusConfig.sessions) > 0 && Number(s.individualBonusConfig.price) > 0)
+    .filter(s => !(s.receipts || []).some(r =>
+      (r.monthlyItems || []).some(item => item.type === 'individualBonus' && item.month === month)))
+    .map(s => ({ student: s, sessions: Number(s.individualBonusConfig.sessions), price: Number(s.individualBonusConfig.price) }));
+
+  if (plans.length === 0) {
+    window.App.showToast(`No hay bonos individuales pendientes de ${monthLabel}`, 'info');
+    return;
+  }
+
+  window.App.confirmAction(
+    'Generar recibos de bonos individuales',
+    `Se generarán ${plans.length} bono(s) individual(es) de ${monthLabel} por adelantado. ¿Continuar?`,
+    () => {
+      plans.forEach(({ student, sessions, price }) => {
+        const bonusId = window.App.uid();
+        const fee = Math.round(price * 100) / 100;
+        if (!student.receipts) student.receipts = [];
+        student.receipts.push({
+          id: window.App.uid(),
+          number: null,
+          generatedAt: `${month}-01`,
+          dueDate: `${month}-05`,
+          amount: fee,
+          classIds: [],
+          monthlyItems: [{
+            type: 'individualBonus',
+            bonusId,
+            month,
+            sessions,
+            label: `Bono de ${sessions} clases individuales`,
+            fee,
+          }],
+          status: 'pending',
+          sentAt: null,
+          paidAt: null,
+        });
+      });
+      window.App.saveState();
+      window.App.renderCurrentTab();
+      window.App.showToast(`${plans.length} recibo(s) de bono individual de ${monthLabel} generado(s)`, 'success');
+    }
+  );
+}
+
 // Group classes in a monthly-billing group are charged a flat quota once per group+month
 // (course normal/2nd-subject rate, see getStudentCourseFee).
 function computeReceiptAmount(s, classIds) {
@@ -271,7 +358,8 @@ function doGenerateReceipt(s, silent = false) {
   
   // Get unbilled past classes
   const classesToBill = window.App.state.classes
-    .filter(c => c.date <= today && c.studentIds.includes(s.id) && !billedClassIds.has(c.id) && !isAdvanceBilled(s, c))
+    .filter(c => c.date <= today && c.studentIds.includes(s.id) && !c.individualBonusId &&
+      !billedClassIds.has(c.id) && !isAdvanceBilled(s, c))
     .map(c => c.id);
   
   if (classesToBill.length === 0) {
@@ -420,6 +508,11 @@ window.App.cancelReceipt = function(studentId, receiptId) {
   if (!s) return;
   const r = (s.receipts || []).find(r => r.id === receiptId);
   if (!r || r.status !== 'pending') return;
+  const bonusIds = (r.monthlyItems || []).filter(item => item.type === 'individualBonus').map(item => item.bonusId);
+  if (bonusIds.some(id => window.App.state.classes.some(c => c.individualBonusId === id))) {
+    window.App.showToast('No se puede cancelar: ya hay clases que consumen sesiones de este bono', 'error');
+    return;
+  }
   window.App.confirmAction('Cancelar aviso', `¿Cancelar este aviso de pago?`, () => {
     s.receipts = s.receipts.filter(r => r.id !== receiptId);
     window.App.saveState();
@@ -870,7 +963,7 @@ window.App.applyReceiptFilters = function() {
       });
       
       const unbilledClasses = window.App.state.classes
-        .filter(c => c.date <= today && c.studentIds.includes(s.id) && !billedClassIds.has(c.id));
+        .filter(c => c.date <= today && c.studentIds.includes(s.id) && !c.individualBonusId && !billedClassIds.has(c.id));
       
       const hasUnbilledClasses = unbilledClasses.length > 0;
       
@@ -1271,6 +1364,11 @@ window.App.initReceiptEvents = function() {
     const monthInput = document.getElementById('monthly-group-receipt-month');
     if (monthInput) monthInput.value = window.App.todayStr().substring(0, 7);
     btnMonthlyGroups.addEventListener('click', window.App.generateMonthlyGroupReceipts);
+  }
+
+  const btnIndividualBonuses = document.getElementById('btn-generate-individual-bonus-receipts');
+  if (btnIndividualBonuses) {
+    btnIndividualBonuses.addEventListener('click', window.App.generateIndividualBonusReceipts);
   }
   
   const btnOpenInvoices = document.getElementById('btn-open-invoices');

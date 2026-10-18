@@ -13,7 +13,8 @@ Gestionar de forma integral una academia de clases particulares, permitiendo el 
 - **Gestión de Clases**: Clases individuales y grupales con control de horarios y cuotas
 - **Gestión de Cursos**: Etiquetado informativo de alumnos por curso
 - **Calendario**: Vista mensual con todas las clases programadas
-- **Recibos**: Generación automática de recibos en PDF
+- **Recibos**: Generación de recibos en PDF, cuotas mensuales de grupos y bonos anticipados de clases individuales
+- **Bonos individuales**: Configuración de sesiones y precio por alumno, asignación de sesiones de bonos pagados y seguimiento de la sesión usada en cada clase
 - **Sincronización GitHub**: Backup automático cifrado (AES-GCM) en repositorio privado
 - **Integración Google Calendar**: Sincronización bidireccional de clases con GCal
 - **Dashboard**: Resumen de estadísticas y próximas clases

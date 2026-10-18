@@ -78,6 +78,9 @@ window.App.buildStudentCard = function(s) {
     ? studentGroups.map(g => g.name).join(', ')
     : '–';
   const coursesText = (s.courses || []).join(', ');
+  const bonusConfigText = s.individualBonusConfig?.sessions > 0 && s.individualBonusConfig?.price > 0
+    ? `Bono individual: ${s.individualBonusConfig.sessions} sesiones · ${window.App.fmtCurrency(s.individualBonusConfig.price)}`
+    : '';
   const multiCourseBadge = window.App.isMultiCourseStudent(s)
     ? '<span style="background:#6366f1;color:white;padding:2px 6px;border-radius:4px;font-size:0.7rem;font-weight:600;margin-left:6px;">Multi-curso</span>'
     : '';
@@ -92,7 +95,9 @@ window.App.buildStudentCard = function(s) {
             ${coursesText ? '<strong>Cursos:</strong> ' + window.App.escHtml(coursesText) : ''}
             ${coursesText && studentGroups.length > 0 ? ' · ' : ''}
             ${studentGroups.length > 0 ? '<strong>Grupos:</strong> ' + window.App.escHtml(groupsText) : ''}
-            ${(coursesText || studentGroups.length > 0) && s.phone ? '<br>' : ''}
+            ${(coursesText || studentGroups.length > 0) && bonusConfigText ? '<br>' : ''}
+            ${bonusConfigText ? window.App.escHtml(bonusConfigText) : ''}
+            ${(coursesText || studentGroups.length > 0 || bonusConfigText) && s.phone ? '<br>' : ''}
             ${s.phone ? '📱 ' + window.App.escHtml(s.phone) : ''}          ${s.phone && s.createdAt ? '<br>' : ''}
           ${s.createdAt ? '📅 Desde: ' + window.App.fmtDate(s.createdAt) : ''}          </div>
           ${pendingReceipts.length > 0 ? `
@@ -132,6 +137,8 @@ window.App.openNewStudent = function() {
   document.getElementById('student-name').value    = '';
   document.getElementById('student-phone').value   = '';
   document.getElementById('student-balance').value = '0';
+  document.getElementById('student-bonus-sessions').value = '';
+  document.getElementById('student-bonus-price').value = '';
   populateCoursesMultiSelect('student-courses', []);
   populatePrimaryCourseSelect('');
   window.App.openModal('modal-student');
@@ -145,6 +152,8 @@ window.App.openEditStudent = function(studentId) {
   document.getElementById('student-name').value    = s.name;
   document.getElementById('student-phone').value   = s.phone || '';
   document.getElementById('student-balance').value = parseFloat(s.balance) || 0;
+  document.getElementById('student-bonus-sessions').value = s.individualBonusConfig?.sessions ?? '';
+  document.getElementById('student-bonus-price').value = s.individualBonusConfig?.price ?? '';
   populateCoursesMultiSelect('student-courses', s.courses || (s.course ? [s.course] : []));
   populatePrimaryCourseSelect(s.primaryCourse || '');
   window.App.openModal('modal-student');
@@ -158,15 +167,34 @@ window.App.saveStudent = function(e) {
   const courses = Array.from(document.getElementById('student-courses').selectedOptions).map(o => o.value);
   const primaryCourse = document.getElementById('student-primary-course').value || courses[0] || '';
   const balance = parseFloat(document.getElementById('student-balance').value) || 0;
+  const bonusSessionsValue = document.getElementById('student-bonus-sessions').value.trim();
+  const bonusPriceValue = document.getElementById('student-bonus-price').value.trim();
+  const bonusSessions = bonusSessionsValue === '' ? 0 : Number(bonusSessionsValue);
+  const bonusPrice = bonusPriceValue === '' ? 0 : Number(bonusPriceValue);
 
   if (!name) {
     window.App.showToast('El nombre es obligatorio', 'error');
     return;
   }
+  if (!Number.isInteger(bonusSessions) || bonusSessions < 0 ||
+      !Number.isFinite(bonusPrice) || bonusPrice < 0 ||
+      (bonusSessions > 0 && bonusPrice <= 0)) {
+    window.App.showToast('Configura un número entero de sesiones y un precio mayor que cero para el bono', 'error');
+    return;
+  }
+  const individualBonusConfig = bonusSessions > 0 ? { sessions: bonusSessions, price: bonusPrice } : null;
 
   if (id) {
     const s = window.App.state.students.find(s => s.id === id);
-    if (s) { s.name = name; s.phone = phone; s.courses = courses; s.course = courses[0] || ''; s.primaryCourse = primaryCourse; s.balance = balance; }
+    if (s) {
+      s.name = name;
+      s.phone = phone;
+      s.courses = courses;
+      s.course = courses[0] || '';
+      s.primaryCourse = primaryCourse;
+      s.balance = balance;
+      s.individualBonusConfig = individualBonusConfig;
+    }
   } else {
     window.App.state.students.push({ 
       id: window.App.uid(), 
@@ -177,6 +205,7 @@ window.App.saveStudent = function(e) {
       primaryCourse,
       createdAt: window.App.todayStr(), 
       balance,
+      individualBonusConfig,
       receipts: [],
       active: true  // New students are active by default
     });

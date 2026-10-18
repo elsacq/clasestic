@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Academia TIC - Gestión de Clases</title>
-  <link rel="stylesheet" href="styles.css?v=20260928" />
+  <link rel="stylesheet" href="styles.css?v=20261019" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
@@ -153,6 +153,9 @@
           <button id="btn-generate-monthly-group-receipts" class="btn btn-sm" style="background:#0ea5e9;color:white">
             Generar recibos mensuales de grupos
           </button>
+          <button id="btn-generate-individual-bonus-receipts" class="btn btn-sm" style="background:#7c3aed;color:white">
+            Generar recibos de bonos individuales
+          </button>
           <button id="btn-send-pending-receipts" class="btn btn-primary btn-sm">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
             Enviar pendientes por WhatsApp
@@ -299,6 +302,20 @@
           <label for="student-balance">Saldo pendiente (€)</label>
           <input type="number" id="student-balance" value="0" step="0.01" min="0" />
         </div>
+        <div class="form-group">
+          <label>Bono mensual de clases individuales (opcional)</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div>
+              <label for="student-bonus-sessions">Sesiones por bono</label>
+              <input type="number" id="student-bonus-sessions" min="0" step="1" placeholder="Desactivado" />
+            </div>
+            <div>
+              <label for="student-bonus-price">Precio del bono (€)</label>
+              <input type="number" id="student-bonus-price" min="0" step="0.01" placeholder="0,00" />
+            </div>
+          </div>
+          <p class="form-hint">Si configuras sesiones y precio, podrás generar cada mes el recibo anticipado. Las sesiones se conservan hasta gastarlas.</p>
+        </div>
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" data-modal="modal-student">Cancelar</button>
           <button type="submit" class="btn btn-primary">Guardar</button>
@@ -350,6 +367,13 @@
         <div class="form-group">
           <label for="class-fee">Cuota por alumno (€) *</label>
           <input type="number" id="class-fee" required step="0.01" min="0" placeholder="0.00" />
+        </div>
+        <div class="form-group hidden" id="class-bonus-selector">
+          <label for="class-bonus">Forma de cobro individual</label>
+          <select id="class-bonus">
+            <option value="">Cobrar la clase normalmente</option>
+          </select>
+          <p class="form-hint">Los bonos se pueden usar después de marcar como pagado su recibo anticipado.</p>
         </div>
         <div id="class-repeat-selector" class="form-group">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -662,13 +686,13 @@
   <script src="js/persistence.js?v=20260928"></script>
   <script src="js/github.js?v=20260928"></script>
   <script src="js/gcal.js?v=20260928"></script>
-  <script src="js/students.js?v=20260928"></script>
-  <script src="js/classes.js?v=20260928"></script>
+  <script src="js/students.js?v=20261019"></script>
+  <script src="js/classes.js?v=20261019"></script>
   <script src="js/groups.js?v=20260928"></script>
   <script src="js/courses.js?v=20260928"></script>
   <script src="js/calendar.js?v=20260928"></script>
   <script src="js/dashboard.js?v=20260928"></script>
-  <script src="js/receipts.js?v=20261018"></script>
+  <script src="js/receipts.js?v=20261019"></script>
   <script src="js/reports.js?v=20260928"></script>
   <script src="js/main.js?v=20261018"></script>
 </body>

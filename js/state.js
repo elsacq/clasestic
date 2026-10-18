@@ -6,9 +6,9 @@ window.App = window.App || {};
 
 window.App.state = {
   courses:  [],   // { id, name, description, monthlyFeeNormal, monthlyFeeSecondSubject }
-  students: [],   // { id, name, phone, course, courses[], primaryCourse, groups, createdAt, balance, receipts[] }
+  students: [],   // { id, name, phone, course, courses[], primaryCourse, individualBonusConfig?, createdAt, balance, receipts[] }
   groups:   [],   // { id, name, description, studentIds[], fee, billingMode: 'perClass'|'monthly', courseId, monthlyFeeOverride? }
-  classes:  [],   // { id, type, course, date, time, fee, studentIds, groupId, attendance: {studentId: boolean}, gcalEventId? }
+  classes:  [],   // { id, type, course, date, time, fee, studentIds, groupId, individualBonusId?, attendance: {studentId: boolean}, gcalEventId? }
   settings: {
     academyName: 'Mi Academia',
     defaultIndividualFee: 15,

@@ -156,6 +156,7 @@ async function init() {
   // Pull from GitHub FIRST to ensure we have latest data
   // This will overwrite local data if GitHub has newer version
   const pulled = await window.App.githubPull();
+  if (window.App.migratePaidReceiptNumbers()) window.App.saveState();
   
   // Update title again in case GitHub sync changed the academy name
   const finalAcademyName = window.App.state.settings?.academyName || 'Academia TIC';
