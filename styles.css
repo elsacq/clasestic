@@ -750,6 +750,38 @@ input::placeholder { color: var(--gray-400); }
   transition: color var(--transition), background var(--transition);
 }
 .modal-close:hover { background: var(--gray-100); color: var(--gray-700); }
+.monthly-receipt-selection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+.monthly-receipt-student-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 45dvh;
+  overflow-y: auto;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+}
+.monthly-receipt-student {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--gray-100);
+  cursor: pointer;
+}
+.monthly-receipt-student:last-child { border-bottom: 0; }
+.monthly-receipt-student input { width: auto; flex-shrink: 0; }
+.monthly-receipt-student-info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.monthly-receipt-student-info small { color: var(--gray-500); }
 
 /* Class detail */
 .detail-row {
@@ -1005,6 +1037,11 @@ input::placeholder { color: var(--gray-400); }
   background: var(--success-light);
   color: #15803d;
 }
+.receipt-status-badge.cancelled {
+  background: var(--gray-100);
+  color: var(--gray-600);
+}
+.receipt-item.cancelled { opacity: 0.78; }
 .receipt-status-badge.printed {
   background: var(--success-light);
   color: #15803d;

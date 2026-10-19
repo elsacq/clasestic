@@ -41,7 +41,10 @@ function receiptActionsHtml(s, r) {
       <button class="btn btn-sm btn-secondary" onclick="window.markReceiptAsSent('${s.id}','${r.id}')">Marcar enviado</button>
       <button class="btn btn-sm btn-secondary" onclick="window.cancelReceipt('${s.id}','${r.id}')">Cancelar</button>
     ` : ''}
-    ${r.status !== 'paid' ? `
+    ${r.status === 'sent' && !r.invoice ? (getMonthlyReceiptCorrectionInfo(s, r)
+      ? `<button class="btn btn-sm btn-primary" onclick="window.App.correctSentMonthlyReceipt('${s.id}','${r.id}')">Corregir y reemitir</button>`
+      : `<button class="btn btn-sm btn-secondary" onclick="window.cancelReceipt('${s.id}','${r.id}')">Anular aviso</button>`) : ''}
+    ${r.status !== 'paid' && r.status !== 'cancelled' ? `
       <button class="btn btn-sm btn-primary" onclick="window.markReceiptAsPaid('${s.id}','${r.id}')">Marcar pagado</button>
     ` : ''}
     <button class="btn btn-sm btn-secondary" onclick="window.downloadReceiptPdf('${s.id}','${r.id}')">PDF aviso</button>
@@ -52,7 +55,8 @@ function receiptActionsHtml(s, r) {
 function isAdvanceBilled(s, c) {
   if (!c.groupId) return false;
   const month = c.date.substring(0, 7);
-  return (s.receipts || []).some(r => (r.monthlyItems || []).some(i => i.month === month && (i.groupId === c.groupId || (i.extraGroupIds || []).includes(c.groupId))));
+  return (s.receipts || []).some(r => r.status !== 'cancelled' &&
+    (r.monthlyItems || []).some(i => i.month === month && (i.groupId === c.groupId || (i.extraGroupIds || []).includes(c.groupId))));
 }
 
 window.App.generateReceipt = function(studentId) {
@@ -61,7 +65,8 @@ window.App.generateReceipt = function(studentId) {
 
   const today = window.App.todayStr();
   const billedClassIds = new Set();
-  (s.receipts || []).forEach(r => (r.classIds || []).forEach(id => billedClassIds.add(id)));
+  (s.receipts || []).filter(r => r.status !== 'cancelled')
+    .forEach(r => (r.classIds || []).forEach(id => billedClassIds.add(id)));
   const unbilledClasses = window.App.state.classes.filter(
     c => c.date <= today && c.studentIds.includes(studentId) && !c.individualBonusId &&
       !billedClassIds.has(c.id) && !isAdvanceBilled(s, c)
@@ -92,7 +97,7 @@ window.App.generateAllReceipts = function() {
     const billedClassIds = new Set();
     
     // Get all billed class IDs from ANY receipt
-    (s.receipts || []).forEach(r => {
+    (s.receipts || []).filter(r => r.status !== 'cancelled').forEach(r => {
       if (r.classIds) {
         r.classIds.forEach(id => billedClassIds.add(id));
       }
@@ -152,18 +157,20 @@ function processGenerateAllReceipts(students) {
 
 // Generates one advance receipt per student for the current month's monthly-billing groups,
 // one course-rate line per course and a separate line for each group with its own rate.
-window.App.generateMonthlyGroupReceipts = function() {
-  const month = document.getElementById('monthly-group-receipt-month')?.value || window.App.todayStr().substring(0, 7);
+function getMonthlyGroupReceiptPlans(month, studentIds) {
   const monthLabel = getMonthLabel(month);
   const plans = [];
+  const selectedStudentIds = studentIds ? new Set(studentIds) : null;
 
-  window.App.state.students.filter(s => s.active !== false).forEach(s => {
+  window.App.state.students.filter(s =>
+    s.active !== false && (!selectedStudentIds || selectedStudentIds.has(s.id))
+  ).forEach(s => {
     const groups = window.App.state.groups.filter(g =>
       g.billingMode === 'monthly' && g.active !== false && g.courseId && (g.studentIds || []).includes(s.id));
     const groupsById = new Map(groups.map(g => [g.id, g]));
     const billedGroupIds = new Set();
     const billedLegacyCourseIds = new Set();
-    (s.receipts || []).forEach(r => (r.monthlyItems || []).forEach(i => {
+    (s.receipts || []).filter(r => r.status !== 'cancelled').forEach(r => (r.monthlyItems || []).forEach(i => {
       if (i.month !== month) return;
       const billedGroup = groupsById.get(i.groupId);
       if (i.groupId && (!hasMonthlyFeeOverride(billedGroup) ||
@@ -213,7 +220,10 @@ window.App.generateMonthlyGroupReceipts = function() {
     });
     if (items.length) plans.push({ s, items });
   });
+  return plans;
+}
 
+function confirmMonthlyGroupReceiptGeneration(plans, month, monthLabel) {
   if (plans.length === 0) {
     window.App.showToast(`No hay cuotas mensuales pendientes de ${monthLabel}`, 'info');
     return;
@@ -244,6 +254,39 @@ window.App.generateMonthlyGroupReceipts = function() {
       window.App.showToast(`${plans.length} recibo(s) de ${monthLabel} generado(s)`, 'success');
     }
   );
+}
+
+window.App.generateMonthlyGroupReceipts = function(studentIds) {
+  const month = document.getElementById('monthly-group-receipt-month')?.value || window.App.todayStr().substring(0, 7);
+  const monthLabel = getMonthLabel(month);
+  const plans = getMonthlyGroupReceiptPlans(month, studentIds);
+  confirmMonthlyGroupReceiptGeneration(plans, month, monthLabel);
+}
+
+window.App.openMonthlyGroupReceiptSelection = function() {
+  const month = document.getElementById('monthly-group-receipt-month')?.value || window.App.todayStr().substring(0, 7);
+  const monthLabel = getMonthLabel(month);
+  const plans = getMonthlyGroupReceiptPlans(month);
+  if (plans.length === 0) {
+    window.App.showToast(`No hay cuotas mensuales pendientes de ${monthLabel}`, 'info');
+    return;
+  }
+
+  document.getElementById('monthly-receipt-selection-month').textContent = monthLabel;
+  document.getElementById('monthly-receipt-student-list').innerHTML = plans.map(({ s, items }) => {
+    const amount = Math.round(items.reduce((sum, item) => sum + item.fee, 0) * 100) / 100;
+    const lines = items.map(item => `${item.label}: ${window.App.fmtCurrency(item.fee)}`).join(' · ');
+    return `
+      <label class="monthly-receipt-student">
+        <input type="checkbox" value="${window.App.escHtml(s.id)}">
+        <span class="monthly-receipt-student-info">
+          <strong>${window.App.escHtml(s.name)}</strong>
+          <small>${window.App.escHtml(lines)}</small>
+        </span>
+        <strong>${window.App.fmtCurrency(amount)}</strong>
+      </label>`;
+  }).join('');
+  window.App.openModal('modal-monthly-receipt-selection');
 }
 
 window.App.getStudentIndividualBonuses = function(studentId) {
@@ -287,7 +330,7 @@ window.App.generateIndividualBonusReceipts = function() {
   const plans = window.App.state.students
     .filter(s => s.active !== false && Number.isInteger(Number(s.individualBonusConfig?.sessions)) &&
       Number(s.individualBonusConfig.sessions) > 0 && Number(s.individualBonusConfig.price) > 0)
-    .filter(s => !(s.receipts || []).some(r =>
+    .filter(s => !(s.receipts || []).some(r => r.status !== 'cancelled' &&
       (r.monthlyItems || []).some(item => item.type === 'individualBonus' && item.month === month)))
     .map(s => ({ student: s, sessions: Number(s.individualBonusConfig.sessions), price: Number(s.individualBonusConfig.price) }));
 
@@ -350,7 +393,7 @@ function doGenerateReceipt(s, silent = false) {
   const billedClassIds = new Set();
   
   // Get all class IDs already in ANY receipt (pending, sent, or paid)
-  (s.receipts || []).forEach(r => {
+  (s.receipts || []).filter(r => r.status !== 'cancelled').forEach(r => {
     if (r.classIds) {
       r.classIds.forEach(id => billedClassIds.add(id));
     }
@@ -480,7 +523,8 @@ function renderReceiptsModal(s) {
   const statusLabels = {
     pending: 'Pendiente',
     sent: 'Enviado',
-    paid: 'Pagado'
+    paid: 'Pagado',
+    cancelled: 'Anulado'
   };
   
   container.innerHTML = receipts.map(r => `
@@ -493,6 +537,7 @@ function renderReceiptsModal(s) {
         <div>
           <div class="receipt-date">Generado: ${window.App.fmtDate(r.generatedAt)}</div>
           ${r.sentAt ? `<div class="receipt-date" style="color:#f59e0b">Enviado: ${window.App.fmtDate(r.sentAt)}</div>` : ''}
+          ${r.cancelledAt ? `<div class="receipt-date" style="color:var(--danger)">Anulado: ${window.App.fmtDate(r.cancelledAt)}</div>` : ''}
           ${r.paidAt ? `<div class="receipt-date" style="color:var(--success)">Pagado: ${window.App.fmtDate(r.paidAt)}</div>` : ''}
         </div>
         <div class="receipt-amount">${window.App.fmtCurrency(r.amount)}</div>
@@ -507,19 +552,100 @@ window.App.cancelReceipt = function(studentId, receiptId) {
   const s = window.App.state.students.find(s => s.id === studentId);
   if (!s) return;
   const r = (s.receipts || []).find(r => r.id === receiptId);
-  if (!r || r.status !== 'pending') return;
+  if (!r || !['pending', 'sent'].includes(r.status) || r.invoice) return;
   const bonusIds = (r.monthlyItems || []).filter(item => item.type === 'individualBonus').map(item => item.bonusId);
   if (bonusIds.some(id => window.App.state.classes.some(c => c.individualBonusId === id))) {
     window.App.showToast('No se puede cancelar: ya hay clases que consumen sesiones de este bono', 'error');
     return;
   }
-  window.App.confirmAction('Cancelar aviso', `¿Cancelar este aviso de pago?`, () => {
-    s.receipts = s.receipts.filter(r => r.id !== receiptId);
-    window.App.saveState();
-    renderReceiptsModal(s);
-    window.App.renderCurrentTab();
-    window.App.showToast('Aviso cancelado');
-  });
+  const wasSent = r.status === 'sent';
+  window.App.confirmAction(
+    wasSent ? 'Anular aviso enviado' : 'Cancelar aviso',
+    wasSent
+      ? `Se anulará el aviso enviado de ${window.App.fmtCurrency(r.amount)} a ${s.name}. Quedará marcado como anulado en el historial y podrás generar uno nuevo. ¿Continuar?`
+      : '¿Cancelar este aviso de pago?',
+    () => {
+      if (wasSent) {
+        r.status = 'cancelled';
+        r.cancelledAt = window.App.todayStr();
+      } else {
+        s.receipts = s.receipts.filter(receipt => receipt.id !== receiptId);
+      }
+      window.App.saveState();
+      renderReceiptsModal(s);
+      window.App.renderCurrentTab();
+      window.App.showToast(wasSent ? 'Aviso anulado; ya puedes generar el corregido' : 'Aviso cancelado');
+    }
+  );
+}
+
+function getMonthlyReceiptCorrectionInfo(student, receipt) {
+  if (receipt.status !== 'sent' || receipt.invoice || (receipt.monthlyItems || []).length !== 1) return null;
+  const item = receipt.monthlyItems[0];
+  if (!item.groupId || !item.month) return null;
+  const group = window.App.state.groups.find(g => g.id === item.groupId);
+  if (!group || group.billingMode === 'monthly') return null;
+
+  const billedClassIds = new Set((student.receipts || [])
+    .filter(r => r.id !== receipt.id && r.status !== 'cancelled')
+    .flatMap(r => r.classIds || []));
+  const classes = window.App.state.classes.filter(c =>
+    c.groupId === group.id && c.date.startsWith(`${item.month}-`) &&
+    c.studentIds.includes(student.id) && !c.individualBonusId && !billedClassIds.has(c.id)
+  ).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  if (classes.length === 0) return null;
+
+  const amount = Math.round(classes.reduce((sum, c) => sum + (parseFloat(c.fee) || 0), 0) * 100) / 100;
+  return { item, group, classes, amount };
+}
+
+window.App.correctSentMonthlyReceipt = function(studentId, receiptId) {
+  const student = window.App.state.students.find(s => s.id === studentId);
+  const receipt = student && (student.receipts || []).find(r => r.id === receiptId);
+  const correction = student && receipt && getMonthlyReceiptCorrectionInfo(student, receipt);
+  if (!correction) {
+    window.App.showToast('No se puede corregir: verifica que el aviso no esté pagado y que las clases del grupo tengan tarifa por clase', 'error');
+    return;
+  }
+
+  const classLines = correction.classes.map(c =>
+    `${window.App.fmtDate(c.date)} · ${c.duration || 60} min · ${window.App.fmtCurrency(c.fee)}`
+  ).join('\n');
+  window.App.confirmAction(
+    'Corregir y reemitir aviso',
+    `Se anulará el aviso enviado de ${window.App.fmtCurrency(receipt.amount)} y se creará uno nuevo de ${window.App.fmtCurrency(correction.amount)} para ${correction.classes.length} clase(s):\n${classLines}\n\nEl grupo conservará su modalidad de cobro por clase. ¿Continuar?`,
+    () => {
+      const currentCorrection = getMonthlyReceiptCorrectionInfo(student, receipt);
+      if (!currentCorrection) {
+        window.App.showToast('No se pudo corregir: las clases o el recibo cambiaron', 'error');
+        return;
+      }
+
+      const today = window.App.todayStr();
+      const replacementId = window.App.uid();
+      receipt.status = 'cancelled';
+      receipt.cancelledAt = today;
+      receipt.correctedByReceiptId = replacementId;
+      student.receipts.push({
+        id: replacementId,
+        number: null,
+        generatedAt: today,
+        dueDate: today,
+        amount: currentCorrection.amount,
+        classIds: currentCorrection.classes.map(c => c.id),
+        monthlyItems: [],
+        status: 'pending',
+        sentAt: null,
+        paidAt: null,
+        correctedFromReceiptId: receipt.id,
+      });
+
+      window.App.saveState();
+      if (window.App.currentReceiptsStudentId === studentId) renderReceiptsModal(student);
+      window.App.renderCurrentTab();
+      window.App.showToast(`Aviso corregido generado · ${window.App.fmtCurrency(currentCorrection.amount)}`, 'success');
+    }
+  );
 }
 
 // Payment notice (no fiscal numbering); the invoice is issued once it's paid.
@@ -956,7 +1082,7 @@ window.App.applyReceiptFilters = function() {
       
       // Check if student has unbilled past classes (use ALL receipts, not filtered)
       const billedClassIds = new Set();
-      allReceipts.forEach(r => {
+      allReceipts.filter(r => r.status !== 'cancelled').forEach(r => {
         if (r.classIds) {
           r.classIds.forEach(id => billedClassIds.add(id));
         }
@@ -1009,7 +1135,7 @@ window.App.applyReceiptFilters = function() {
     return;
   }
   
-  const statusLabels = { pending: 'Pendiente', sent: 'Enviado', paid: 'Pagado' };
+  const statusLabels = { pending: 'Pendiente', sent: 'Enviado', paid: 'Pagado', cancelled: 'Anulado' };
   
   list.innerHTML = studentsWithReceipts.map(item => {
     const s = item.student;
@@ -1036,6 +1162,7 @@ window.App.applyReceiptFilters = function() {
               <div>
                 <div class="receipt-date">Generado: ${window.App.fmtDate(r.generatedAt)}</div>
                 ${r.sentAt ? `<div class="receipt-date" style="color:#f59e0b">Enviado: ${window.App.fmtDate(r.sentAt)}</div>` : ''}
+                ${r.cancelledAt ? `<div class="receipt-date" style="color:var(--danger)">Anulado: ${window.App.fmtDate(r.cancelledAt)}</div>` : ''}
                 ${r.paidAt ? `<div class="receipt-date" style="color:var(--success)">Pagado: ${window.App.fmtDate(r.paidAt)}</div>` : ''}
               </div>
               <div class="receipt-amount">${window.App.fmtCurrency(r.amount)}</div>
@@ -1083,8 +1210,8 @@ window.App.markReceiptAsPaid = function(studentId, receiptId) {
   const r = (s.receipts || []).find(r => r.id === receiptId);
   if (!r) return;
   
-  if (r.status === 'paid') {
-    window.App.showToast('Este aviso ya está marcado como pagado', 'error');
+  if (r.status === 'paid' || r.status === 'cancelled') {
+    window.App.showToast(r.status === 'paid' ? 'Este aviso ya está marcado como pagado' : 'No se puede pagar un aviso anulado', 'error');
     return;
   }
   
@@ -1364,6 +1491,40 @@ window.App.initReceiptEvents = function() {
     const monthInput = document.getElementById('monthly-group-receipt-month');
     if (monthInput) monthInput.value = window.App.todayStr().substring(0, 7);
     btnMonthlyGroups.addEventListener('click', window.App.generateMonthlyGroupReceipts);
+  }
+
+  const btnSelectMonthlyGroupStudents = document.getElementById('btn-select-monthly-group-receipt-students');
+  if (btnSelectMonthlyGroupStudents) {
+    btnSelectMonthlyGroupStudents.addEventListener('click', window.App.openMonthlyGroupReceiptSelection);
+  }
+
+  const monthlyReceiptStudentList = document.getElementById('monthly-receipt-student-list');
+  const btnSelectAllMonthlyReceiptStudents = document.getElementById('btn-select-all-monthly-receipt-students');
+  if (btnSelectAllMonthlyReceiptStudents && monthlyReceiptStudentList) {
+    btnSelectAllMonthlyReceiptStudents.addEventListener('click', () => {
+      monthlyReceiptStudentList.querySelectorAll('input[type="checkbox"]').forEach(input => { input.checked = true; });
+    });
+  }
+
+  const btnClearMonthlyReceiptStudents = document.getElementById('btn-clear-monthly-receipt-students');
+  if (btnClearMonthlyReceiptStudents && monthlyReceiptStudentList) {
+    btnClearMonthlyReceiptStudents.addEventListener('click', () => {
+      monthlyReceiptStudentList.querySelectorAll('input[type="checkbox"]').forEach(input => { input.checked = false; });
+    });
+  }
+
+  const btnGenerateSelectedMonthlyReceipts = document.getElementById('btn-generate-selected-monthly-receipts');
+  if (btnGenerateSelectedMonthlyReceipts && monthlyReceiptStudentList) {
+    btnGenerateSelectedMonthlyReceipts.addEventListener('click', () => {
+      const studentIds = Array.from(monthlyReceiptStudentList.querySelectorAll('input[type="checkbox"]:checked'))
+        .map(input => input.value);
+      if (studentIds.length === 0) {
+        window.App.showToast('Selecciona al menos un alumno', 'error');
+        return;
+      }
+      window.App.closeModal('modal-monthly-receipt-selection');
+      window.App.generateMonthlyGroupReceipts(studentIds);
+    });
   }
 
   const btnIndividualBonuses = document.getElementById('btn-generate-individual-bonus-receipts');

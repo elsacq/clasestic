@@ -32,14 +32,14 @@ window.App.renderDashboard = function() {
   // Students with debt: ONLY those with unpaid receipts (sent/pending)
   const studentsWithDebt = window.App.state.students.filter(s => {
     // Check for unpaid receipts (pending or sent, not paid)
-    const unpaidReceipts = (s.receipts || []).filter(r => r.status !== 'paid');
+    const unpaidReceipts = (s.receipts || []).filter(r => r.status === 'pending' || r.status === 'sent');
     return unpaidReceipts.length > 0;
   });
   
   // Calculate total debt from unpaid receipts only
   const totalDebt = studentsWithDebt.reduce((sum, s) => {
     const unpaidAmount = (s.receipts || [])
-      .filter(r => r.status !== 'paid')
+      .filter(r => r.status === 'pending' || r.status === 'sent')
       .reduce((s2, r) => s2 + (parseFloat(r.amount) || 0), 0);
     return sum + unpaidAmount;
   }, 0);
@@ -121,7 +121,7 @@ window.App.renderDashboard = function() {
     const sorted = [...studentsWithDebt].sort((a, b) => {
       const getUnpaidAmount = (s) => {
         return (s.receipts || [])
-          .filter(r => r.status !== 'paid')
+          .filter(r => r.status === 'pending' || r.status === 'sent')
           .reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
       };
       return getUnpaidAmount(b) - getUnpaidAmount(a);
@@ -136,7 +136,7 @@ window.App.buildDebtorCard = function(s) {
   
   // Get unpaid receipts (pending or sent)
   const unpaidReceipts = (s.receipts || [])
-    .filter(r => r.status !== 'paid')
+    .filter(r => r.status === 'pending' || r.status === 'sent')
     .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt));
   
   const totalDebt = unpaidReceipts.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);

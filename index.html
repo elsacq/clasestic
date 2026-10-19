@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Academia TIC - Gestión de Clases</title>
-  <link rel="stylesheet" href="styles.css?v=20261019" />
+  <link rel="stylesheet" href="styles.css?v=20261021" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
@@ -153,6 +153,9 @@
           <button id="btn-generate-monthly-group-receipts" class="btn btn-sm" style="background:#0ea5e9;color:white">
             Generar recibos mensuales de grupos
           </button>
+          <button id="btn-select-monthly-group-receipt-students" class="btn btn-sm btn-secondary">
+            Elegir alumnos para recibo mensual
+          </button>
           <button id="btn-generate-individual-bonus-receipts" class="btn btn-sm" style="background:#7c3aed;color:white">
             Generar recibos de bonos individuales
           </button>
@@ -183,6 +186,7 @@
           <option value="pending">Pendientes</option>
           <option value="sent">Enviados</option>
           <option value="paid">Pagados</option>
+          <option value="cancelled">Anulados</option>
         </select>
       </div>
       <div id="receipts-panel-list"></div>
@@ -678,6 +682,27 @@
     </div>
   </div>
 
+  <!-- MODAL: Select students for monthly group receipts -->
+  <div id="modal-monthly-receipt-selection" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Elegir alumnos · <span id="monthly-receipt-selection-month"></span></h3>
+        <button class="modal-close" data-modal="modal-monthly-receipt-selection">&times;</button>
+      </div>
+      <p>Marca solo los alumnos a quienes quieras generarles la cuota mensual de grupos.</p>
+      <div class="monthly-receipt-selection-actions">
+        <button type="button" id="btn-select-all-monthly-receipt-students" class="btn btn-sm btn-secondary">Seleccionar todos</button>
+        <button type="button" id="btn-clear-monthly-receipt-students" class="btn btn-sm btn-secondary">Deseleccionar todos</button>
+      </div>
+      <div id="monthly-receipt-student-list" class="monthly-receipt-student-list"></div>
+      <div class="form-actions mt-8">
+        <button class="btn btn-secondary" data-modal="modal-monthly-receipt-selection">Cancelar</button>
+        <button id="btn-generate-selected-monthly-receipts" class="btn btn-primary">Generar para seleccionados</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Load scripts in dependency order -->
   <script src="js/config.js?v=20260928"></script>
   <script src="js/utils.js?v=20260928"></script>
@@ -691,8 +716,8 @@
   <script src="js/groups.js?v=20260928"></script>
   <script src="js/courses.js?v=20260928"></script>
   <script src="js/calendar.js?v=20260928"></script>
-  <script src="js/dashboard.js?v=20260928"></script>
-  <script src="js/receipts.js?v=20261019"></script>
+  <script src="js/dashboard.js?v=20261021"></script>
+  <script src="js/receipts.js?v=20261022"></script>
   <script src="js/reports.js?v=20260928"></script>
   <script src="js/main.js?v=20261018"></script>
 </body>
