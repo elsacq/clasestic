@@ -27,6 +27,16 @@ function getDurationMultiplier(duration) {
   }
 }
 
+function getSafeZoomUrl(value) {
+  if (!value) return '';
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
 // Update fee based on duration
 function updateFeeForDuration() {
   if (userEditedFee) return; // Don't auto-adjust if user manually changed fee
@@ -221,6 +231,8 @@ window.App.openNewClass = function(prefillDate, lockedStudentId) {
   document.getElementById('class-id').value   = '';
   document.getElementById('class-type').value = 'individual';
   document.getElementById('class-comment').value = '';
+  document.getElementById('class-zoom-url').value = '';
+  document.getElementById('class-zoom-password').value = '';
   
   // Store locked student if provided
   window.App._lockedStudentId = lockedStudentId || null;
@@ -292,6 +304,8 @@ window.App.openNewClassFromGroup = function(groupId) {
   document.getElementById('class-id').value   = '';
   document.getElementById('class-type').value = 'grupal';
   document.getElementById('class-comment').value = '';
+  document.getElementById('class-zoom-url').value = '';
+  document.getElementById('class-zoom-password').value = '';
 
   const today = window.App.todayStr();
   const dateInput = document.getElementById('class-date');
@@ -346,6 +360,8 @@ window.App.openEditClass = function(classId) {
   document.getElementById('class-id').value   = c.id;
   document.getElementById('class-type').value = c.type;
   document.getElementById('class-comment').value = c.comment || '';
+  document.getElementById('class-zoom-url').value = c.zoomUrl || '';
+  document.getElementById('class-zoom-password').value = c.zoomPassword || '';
   
   const dateInput = document.getElementById('class-date');
   const timeInput = document.getElementById('class-time');
@@ -563,6 +579,9 @@ window.App.saveClass = function(e) {
   const duration = parseInt(document.getElementById('class-duration').value) || 60;
   const fee    = parseFloat(document.getElementById('class-fee').value);
   const comment = document.getElementById('class-comment').value.trim();
+  const zoomUrlInput = document.getElementById('class-zoom-url').value.trim();
+  const zoomUrl = getSafeZoomUrl(zoomUrlInput);
+  const zoomPassword = document.getElementById('class-zoom-password').value;
   const groupId = document.getElementById('class-group').value;
   const selectedBonusId = document.getElementById('class-bonus').value;
   const repeatWeekly = !id && document.getElementById('class-repeat-weekly').checked;
@@ -570,6 +589,7 @@ window.App.saveClass = function(e) {
 
   if (!date || !time) { window.App.showToast('Fecha y hora obligatorias', 'error'); return; }
   if (isNaN(fee) || fee < 0) { window.App.showToast('Cuota inválida', 'error'); return; }
+  if (zoomUrlInput && !zoomUrl) { window.App.showToast('El enlace de Zoom debe ser una URL válida que empiece por http:// o https://', 'error'); return; }
   if (studentIds.length === 0) { window.App.showToast('Selecciona al menos un alumno', 'error'); return; }
   if (type === 'individual' && studentIds.length > 1) { window.App.showToast('Clase individual: solo 1 alumno', 'error'); return; }
   if (repeatWeekly && (!repeatUntil || repeatUntil <= date)) {
@@ -604,7 +624,7 @@ window.App.saveClass = function(e) {
       // Update class (balance is calculated dynamically, no need to adjust)
       Object.assign(existing, {
         type, date, time, duration, fee: savedFee, studentIds, groupId: groupId || null,
-        individualBonusId: selectedBonusId || null, comment,
+        individualBonusId: selectedBonusId || null, comment, zoomUrl, zoomPassword,
       });
     }
   } else {
@@ -612,7 +632,7 @@ window.App.saveClass = function(e) {
     const newId = window.App.uid();
     window.App.state.classes.push({
       id: newId, type, date, time, duration, fee: savedFee, studentIds, groupId: groupId || null,
-      individualBonusId: selectedBonusId || null, comment,
+      individualBonusId: selectedBonusId || null, comment, zoomUrl, zoomPassword,
     });
     createdIds.push(newId);
 
@@ -625,7 +645,7 @@ window.App.saveClass = function(e) {
           skipped++;
         } else {
           const repeatId = window.App.uid();
-          window.App.state.classes.push({ id: repeatId, type, date: nextDate, time, duration, fee, studentIds, groupId: groupId || null, comment });
+          window.App.state.classes.push({ id: repeatId, type, date: nextDate, time, duration, fee, studentIds, groupId: groupId || null, zoomUrl, zoomPassword });
           createdIds.push(repeatId);
         }
         nextDate = addDays(nextDate, 7);
@@ -688,18 +708,30 @@ window.App.openClassDetail = function(classId) {
     }
   })() : '1 hora';
   const bonusSession = getClassBonusSessionInfo(c);
+  const group = c.groupId ? window.App.state.groups.find(g => g.id === c.groupId) : null;
+  const linkedCourse = group?.courseId
+    ? window.App.state.courses.find(course => course.id === group.courseId)
+    : null;
+  const studentCourses = [...new Set(c.studentIds
+    .map(id => window.App.state.students.find(s => s.id === id))
+    .map(s => s && (s.primaryCourse || s.course || s.courses?.[0]))
+    .filter(Boolean))];
+  const courseName = c.course || linkedCourse?.name || studentCourses.join(', ') || '–';
+  const safeZoomUrl = getSafeZoomUrl(c.zoomUrl);
 
   document.getElementById('class-detail-content').innerHTML = `
     <div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value"><span class="class-type-badge ${c.type}">${c.type}</span></span></div>
     <div class="detail-row"><span class="detail-label">Fecha</span><span class="detail-value">${window.App.fmtDate(c.date)} · ${window.App.dayOfWeek(c.date)}</span></div>
     <div class="detail-row"><span class="detail-label">Hora</span><span class="detail-value">${c.time}</span></div>
     <div class="detail-row"><span class="detail-label">Duración</span><span class="detail-value">${durationText}</span></div>
-    <div class="detail-row"><span class="detail-label">Curso</span><span class="detail-value">${window.App.escHtml(c.course || '–')}</span></div>
+    <div class="detail-row"><span class="detail-label">Curso</span><span class="detail-value">${window.App.escHtml(courseName)}</span></div>
     <div class="detail-row"><span class="detail-label">Cuota/alumno</span><span class="detail-value" style="font-weight:700;color:var(--primary)">${window.App.fmtCurrency(c.fee)}</span></div>
     ${bonusSession ? `<div class="detail-row"><span class="detail-label">Bono individual</span><span class="detail-value">Sesión ${bonusSession.sessionNumber} de ${bonusSession.sessionsTotal}</span></div>` : ''}
     ${c.type === 'grupal' ? `<div class="detail-row"><span class="detail-label">Total clase</span><span class="detail-value" style="font-weight:700;color:var(--gray-800)">${window.App.fmtCurrency(c.fee * c.studentIds.length)}</span></div>` : ''}
     <div class="detail-row"><span class="detail-label">Alumnos</span><span class="detail-value">${studentChips}</span></div>
     ${c.comment ? `<div class="detail-row"><span class="detail-label">Comentario</span><span class="detail-value class-comment">${window.App.escHtml(c.comment)}</span></div>` : ''}
+    ${safeZoomUrl ? `<div class="detail-row"><span class="detail-label">Zoom</span><span class="detail-value"><a href="${window.App.escHtml(safeZoomUrl)}" target="_blank" rel="noopener noreferrer">Unirse a la clase</a></span></div>` : ''}
+    ${c.zoomPassword ? `<div class="detail-row"><span class="detail-label">Contraseña</span><span class="detail-value">${window.App.escHtml(c.zoomPassword)}</span></div>` : ''}
   `;
   window.App.openModal('modal-class-detail');
 }
