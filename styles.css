@@ -792,6 +792,7 @@ input::placeholder { color: var(--gray-400); }
 }
 .detail-label { font-weight: 600; color: var(--gray-500); min-width: 90px; }
 .detail-value { color: var(--gray-800); }
+.detail-value.class-comment { white-space: pre-wrap; overflow-wrap: anywhere; }
 .detail-student-chip {
   display: inline-flex;
   align-items: center;

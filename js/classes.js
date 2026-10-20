@@ -220,6 +220,7 @@ window.App.openNewClass = function(prefillDate, lockedStudentId) {
   document.getElementById('modal-class-title').textContent = 'Nueva clase';
   document.getElementById('class-id').value   = '';
   document.getElementById('class-type').value = 'individual';
+  document.getElementById('class-comment').value = '';
   
   // Store locked student if provided
   window.App._lockedStudentId = lockedStudentId || null;
@@ -290,6 +291,7 @@ window.App.openNewClassFromGroup = function(groupId) {
   document.getElementById('modal-class-title').textContent = 'Nueva clase — ' + window.App.escHtml(g.name);
   document.getElementById('class-id').value   = '';
   document.getElementById('class-type').value = 'grupal';
+  document.getElementById('class-comment').value = '';
 
   const today = window.App.todayStr();
   const dateInput = document.getElementById('class-date');
@@ -343,6 +345,7 @@ window.App.openEditClass = function(classId) {
   document.getElementById('modal-class-title').textContent = 'Editar clase';
   document.getElementById('class-id').value   = c.id;
   document.getElementById('class-type').value = c.type;
+  document.getElementById('class-comment').value = c.comment || '';
   
   const dateInput = document.getElementById('class-date');
   const timeInput = document.getElementById('class-time');
@@ -559,6 +562,7 @@ window.App.saveClass = function(e) {
   const time   = document.getElementById('class-time').value;
   const duration = parseInt(document.getElementById('class-duration').value) || 60;
   const fee    = parseFloat(document.getElementById('class-fee').value);
+  const comment = document.getElementById('class-comment').value.trim();
   const groupId = document.getElementById('class-group').value;
   const selectedBonusId = document.getElementById('class-bonus').value;
   const repeatWeekly = !id && document.getElementById('class-repeat-weekly').checked;
@@ -600,7 +604,7 @@ window.App.saveClass = function(e) {
       // Update class (balance is calculated dynamically, no need to adjust)
       Object.assign(existing, {
         type, date, time, duration, fee: savedFee, studentIds, groupId: groupId || null,
-        individualBonusId: selectedBonusId || null,
+        individualBonusId: selectedBonusId || null, comment,
       });
     }
   } else {
@@ -608,7 +612,7 @@ window.App.saveClass = function(e) {
     const newId = window.App.uid();
     window.App.state.classes.push({
       id: newId, type, date, time, duration, fee: savedFee, studentIds, groupId: groupId || null,
-      individualBonusId: selectedBonusId || null,
+      individualBonusId: selectedBonusId || null, comment,
     });
     createdIds.push(newId);
 
@@ -621,7 +625,7 @@ window.App.saveClass = function(e) {
           skipped++;
         } else {
           const repeatId = window.App.uid();
-          window.App.state.classes.push({ id: repeatId, type, date: nextDate, time, duration, fee, studentIds, groupId: groupId || null });
+          window.App.state.classes.push({ id: repeatId, type, date: nextDate, time, duration, fee, studentIds, groupId: groupId || null, comment });
           createdIds.push(repeatId);
         }
         nextDate = addDays(nextDate, 7);
@@ -695,6 +699,7 @@ window.App.openClassDetail = function(classId) {
     ${bonusSession ? `<div class="detail-row"><span class="detail-label">Bono individual</span><span class="detail-value">Sesión ${bonusSession.sessionNumber} de ${bonusSession.sessionsTotal}</span></div>` : ''}
     ${c.type === 'grupal' ? `<div class="detail-row"><span class="detail-label">Total clase</span><span class="detail-value" style="font-weight:700;color:var(--gray-800)">${window.App.fmtCurrency(c.fee * c.studentIds.length)}</span></div>` : ''}
     <div class="detail-row"><span class="detail-label">Alumnos</span><span class="detail-value">${studentChips}</span></div>
+    ${c.comment ? `<div class="detail-row"><span class="detail-label">Comentario</span><span class="detail-value class-comment">${window.App.escHtml(c.comment)}</span></div>` : ''}
   `;
   window.App.openModal('modal-class-detail');
 }
