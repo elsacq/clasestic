@@ -59,6 +59,10 @@ function isAdvanceBilled(s, c) {
     (r.monthlyItems || []).some(i => i.month === month && (i.groupId === c.groupId || (i.extraGroupIds || []).includes(c.groupId))));
 }
 
+function isReceiptDateEligible(c, today) {
+  return c.date <= today || c.date.substring(0, 7) === today.substring(0, 7);
+}
+
 window.App.generateReceipt = function(studentId) {
   const s = window.App.state.students.find(s => s.id === studentId);
   if (!s) return;
@@ -68,7 +72,7 @@ window.App.generateReceipt = function(studentId) {
   (s.receipts || []).filter(r => r.status !== 'cancelled')
     .forEach(r => (r.classIds || []).forEach(id => billedClassIds.add(id)));
   const unbilledClasses = window.App.state.classes.filter(
-    c => c.date <= today && c.studentIds.includes(studentId) && !c.individualBonusId &&
+    c => isReceiptDateEligible(c, today) && c.studentIds.includes(studentId) && !c.individualBonusId &&
       !billedClassIds.has(c.id) && !isAdvanceBilled(s, c)
   );
   if (unbilledClasses.length === 0) {
@@ -103,9 +107,9 @@ window.App.generateAllReceipts = function() {
       }
     });
     
-    // Check if student has past unbilled classes
+    // Check if student has unbilled classes through the end of the current month
     const unbilledClasses = window.App.state.classes.filter(c => 
-      c.date <= today && 
+      isReceiptDateEligible(c, today) &&
       c.studentIds.includes(s.id) && 
       !c.individualBonusId &&
       !billedClassIds.has(c.id) &&
@@ -388,7 +392,7 @@ function hasMonthlyFeeOverride(group) {
 
 function doGenerateReceipt(s, silent = false) {
 
-  // Get classes to bill: past classes not yet billed
+  // Get unbilled classes through the end of the current month
   const today = window.App.todayStr();
   const billedClassIds = new Set();
   
@@ -399,9 +403,9 @@ function doGenerateReceipt(s, silent = false) {
     }
   });
   
-  // Get unbilled past classes
+  // Get unbilled classes through the end of the current month
   const classesToBill = window.App.state.classes
-    .filter(c => c.date <= today && c.studentIds.includes(s.id) && !c.individualBonusId &&
+    .filter(c => isReceiptDateEligible(c, today) && c.studentIds.includes(s.id) && !c.individualBonusId &&
       !billedClassIds.has(c.id) && !isAdvanceBilled(s, c))
     .map(c => c.id);
   
@@ -1080,7 +1084,7 @@ window.App.applyReceiptFilters = function() {
     .map(s => {
       const allReceipts = (s.receipts || []).slice();
       
-      // Check if student has unbilled past classes (use ALL receipts, not filtered)
+      // Check for unbilled classes through the end of the current month (use ALL receipts, not filtered)
       const billedClassIds = new Set();
       allReceipts.filter(r => r.status !== 'cancelled').forEach(r => {
         if (r.classIds) {
@@ -1089,7 +1093,8 @@ window.App.applyReceiptFilters = function() {
       });
       
       const unbilledClasses = window.App.state.classes
-        .filter(c => c.date <= today && c.studentIds.includes(s.id) && !c.individualBonusId && !billedClassIds.has(c.id));
+        .filter(c => isReceiptDateEligible(c, today) && c.studentIds.includes(s.id) && !c.individualBonusId &&
+          !billedClassIds.has(c.id) && !isAdvanceBilled(s, c));
       
       const hasUnbilledClasses = unbilledClasses.length > 0;
       
