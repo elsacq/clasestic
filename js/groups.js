@@ -165,6 +165,7 @@ window.App.saveGroup = function(e) {
   }
   
   const selectedStudents = window.App.getGroupPickerSelected();
+  let updatedFutureClasses = 0;
   
   if (id) {
     // Edit existing
@@ -178,6 +179,17 @@ window.App.saveGroup = function(e) {
       g.monthlyFeeOverride = billingMode === 'monthly' ? monthlyFeeOverride : null;
       g.active = active;
       g.studentIds = selectedStudents;
+      const today = window.App.todayStr();
+      window.App.state.classes.forEach(c => {
+        if (c.groupId !== id || !c.date || c.date <= today) return;
+        c.studentIds = [...selectedStudents];
+        if (c.attendance) {
+          Object.keys(c.attendance).forEach(studentId => {
+            if (!selectedStudents.includes(studentId)) delete c.attendance[studentId];
+          });
+        }
+        updatedFutureClasses++;
+      });
       window.App.showToast('Grupo actualizado', 'success');
     }
   } else {
@@ -199,6 +211,9 @@ window.App.saveGroup = function(e) {
   window.App.saveState();
   window.App.renderGroups();
   window.App.closeModal('modal-group');
+  if (updatedFutureClasses > 0) {
+    window.App.showToast(`Alumnos actualizados en ${updatedFutureClasses} clase(s) futura(s)`, 'info');
+  }
 };
 
 window.App.deleteGroup = function(groupId) {
