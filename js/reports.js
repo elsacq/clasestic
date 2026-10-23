@@ -35,6 +35,7 @@ function buildReportsData(fromDate, toDate) {
 
   window.App.state.students.forEach(s => {
     (s.receipts || []).forEach(r => {
+      if (r.status === 'cancelled') return;
       const amount = parseFloat(r.amount) || 0;
       if (amount <= 0) return;
 
