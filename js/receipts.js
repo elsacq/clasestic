@@ -51,12 +51,22 @@ function receiptActionsHtml(s, r) {
     ${r.invoice ? `<button class="btn btn-sm btn-primary" onclick="window.downloadInvoicePdf('${s.id}','${r.id}')">PDF factura</button>` : ''}`;
 }
 
-// True if the group's monthly quota for the class's month was already billed in advance.
+function isGroupMonthBilled(s, groupId, month) {
+  return (s.receipts || []).some(r => r.status !== 'cancelled' &&
+    (
+      (r.monthlyItems || []).some(i => i.month === month &&
+        (i.groupId === groupId || (i.extraGroupIds || []).includes(groupId))) ||
+      (r.classIds || []).some(id => {
+        const billedClass = window.App.state.classes.find(cl => cl.id === id);
+        return billedClass?.groupId === groupId && billedClass.date?.substring(0, 7) === month;
+      })
+    ));
+}
+
+// A class ID in a receipt also marks its monthly group quota as billed for that month.
 function isAdvanceBilled(s, c) {
   if (!c.groupId) return false;
-  const month = c.date.substring(0, 7);
-  return (s.receipts || []).some(r => r.status !== 'cancelled' &&
-    (r.monthlyItems || []).some(i => i.month === month && (i.groupId === c.groupId || (i.extraGroupIds || []).includes(c.groupId))));
+  return isGroupMonthBilled(s, c.groupId, c.date.substring(0, 7));
 }
 
 function isReceiptDateEligible(c, today) {
@@ -186,6 +196,9 @@ function getMonthlyGroupReceiptPlans(month, studentIds) {
       });
       if (!i.groupId) billedLegacyCourseIds.add(i.courseId);
     }));
+    groups.forEach(g => {
+      if (isGroupMonthBilled(s, g.id, month)) billedGroupIds.add(g.id);
+    });
     const items = [];
 
     const groupsByCourse = new Map();
