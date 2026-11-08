@@ -47,6 +47,9 @@ function receiptActionsHtml(s, r) {
     ${r.status !== 'paid' && r.status !== 'cancelled' ? `
       <button class="btn btn-sm btn-primary" onclick="window.markReceiptAsPaid('${s.id}','${r.id}')">Marcar pagado</button>
     ` : ''}
+    ${canApplyPaidReceiptToBonus(s, r) ? `
+      <button class="btn btn-sm btn-secondary" onclick="window.App.applyPaidReceiptToBonus('${s.id}','${r.id}')">Aplicar pago al bono</button>
+    ` : ''}
     <button class="btn btn-sm btn-secondary" onclick="window.downloadReceiptPdf('${s.id}','${r.id}')">PDF aviso</button>
     ${r.invoice ? `<button class="btn btn-sm btn-primary" onclick="window.downloadInvoicePdf('${s.id}','${r.id}')">PDF factura</button>` : ''}`;
 }
@@ -311,8 +314,10 @@ window.App.getStudentIndividualBonuses = function(studentId) {
   if (!student) return [];
 
   return (student.receipts || []).filter(r => r.status === 'paid').flatMap(r =>
-    (r.monthlyItems || [])
-      .filter(item => item.type === 'individualBonus')
+    [
+      ...(r.monthlyItems || []).filter(item => item.type === 'individualBonus'),
+      ...(r.bonusEntitlements || []),
+    ]
       .map(item => {
         const used = window.App.state.classes.filter(c =>
           c.type === 'individual' && c.individualBonusId === item.bonusId &&
@@ -329,6 +334,78 @@ window.App.getStudentIndividualBonuses = function(studentId) {
         };
       })
   ).sort((a, b) => a.month.localeCompare(b.month) || a.id.localeCompare(b.id));
+};
+
+function getConfiguredIndividualBonus(student) {
+  const sessions = Number(student.individualBonusConfig?.sessions);
+  const price = Number(student.individualBonusConfig?.price);
+  if (!Number.isInteger(sessions) || sessions <= 0 || !Number.isFinite(price) || price <= 0) return null;
+  return { sessions, price: Math.round(price * 100) / 100 };
+}
+
+function canApplyPaidReceiptToBonus(student, receipt) {
+  const config = getConfiguredIndividualBonus(student);
+  return receipt.status === 'paid' && config &&
+    Math.round((Number(receipt.amount) || 0) * 100) === Math.round(config.price * 100) &&
+    !(receipt.bonusEntitlements || []).length &&
+    !(receipt.monthlyItems || []).some(item => item.type === 'individualBonus');
+}
+
+window.App.applyPaidReceiptToBonus = function(studentId, receiptId) {
+  const student = window.App.state.students.find(s => s.id === studentId);
+  const receipt = student && (student.receipts || []).find(r => r.id === receiptId);
+  const config = student && getConfiguredIndividualBonus(student);
+  if (!student || !receipt || !config || !canApplyPaidReceiptToBonus(student, receipt)) {
+    window.App.showToast('Este recibo no se puede aplicar al bono; comprueba el importe y la configuración del alumno', 'error');
+    return;
+  }
+
+  const month = (receipt.generatedAt || window.App.todayStr()).substring(0, 7);
+  const pendingBonusReceipts = (student.receipts || []).filter(r =>
+    r.id !== receipt.id && r.status === 'pending' && !r.invoice &&
+    Math.round((Number(r.amount) || 0) * 100) === Math.round(config.price * 100) &&
+    (r.monthlyItems || []).some(item =>
+      item.type === 'individualBonus' && item.month === month && Number(item.sessions) === config.sessions)
+  );
+  const invoiceLabel = receipt.invoice?.number ? ` (factura ${receipt.invoice.number})` : '';
+  const pendingMessage = pendingBonusReceipts.length
+    ? ` También se cancelará${pendingBonusReceipts.length === 1 ? '' : 'n'} el aviso pendiente duplicado${pendingBonusReceipts.length === 1 ? '' : 's'} del bono.`
+    : '';
+
+  window.App.confirmAction(
+    'Aplicar pago existente al bono',
+    `El pago de ${window.App.fmtCurrency(receipt.amount)}${invoiceLabel} cubrirá el bono de ${config.sessions} clases individuales de ${window.App.fmtCurrency(config.price)}. No se emitirá otra factura ni se cambiará el importe de la factura existente.${pendingMessage} ¿Continuar?`,
+    () => {
+      const currentReceipt = (student.receipts || []).find(r => r.id === receiptId);
+      const currentConfig = getConfiguredIndividualBonus(student);
+      if (!currentReceipt || !currentConfig || !canApplyPaidReceiptToBonus(student, currentReceipt)) {
+        window.App.showToast('No se pudo aplicar el pago: el recibo o la configuración cambiaron', 'error');
+        return;
+      }
+
+      const currentMonth = (currentReceipt.generatedAt || window.App.todayStr()).substring(0, 7);
+      const duplicatePendingIds = new Set((student.receipts || []).filter(r =>
+        r.id !== currentReceipt.id && r.status === 'pending' && !r.invoice &&
+        Math.round((Number(r.amount) || 0) * 100) === Math.round(currentConfig.price * 100) &&
+        (r.monthlyItems || []).some(item =>
+          item.type === 'individualBonus' && item.month === currentMonth && Number(item.sessions) === currentConfig.sessions)
+      ).map(r => r.id));
+
+      student.receipts = (student.receipts || []).filter(r => !duplicatePendingIds.has(r.id));
+      currentReceipt.bonusEntitlements = [{
+        bonusId: window.App.uid(),
+        month: currentMonth,
+        sessions: currentConfig.sessions,
+        label: `Bono de ${currentConfig.sessions} clases individuales`,
+        fee: currentConfig.price,
+      }];
+
+      window.App.saveState();
+      if (window.App.currentReceiptsStudentId === studentId) renderReceiptsModal(student);
+      window.App.renderCurrentTab();
+      window.App.showToast(`Pago aplicado al bono: ${currentConfig.sessions} sesiones disponibles`, 'success');
+    }
+  );
 };
 
 window.App.getAvailableIndividualBonuses = function(studentId, excludeClassId = '') {
@@ -519,12 +596,16 @@ function getReceiptLineItems(s, r) {
 
 function buildReceiptClassLines(s, r) {
   const items = getReceiptLineItems(s, r);
-  if (items.length === 0) return '';
   const rows = items.map(item => `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--gray-100);font-size:0.78rem;color:var(--gray-700)">
       <span>${window.App.escHtml(item.dateLabel)}&nbsp;&nbsp;<span style="color:var(--gray-500)">${window.App.escHtml(item.typeLabel)}</span></span>
       <span style="font-weight:600">${window.App.fmtCurrency(item.fee)}</span>
     </div>`).join('');
-  return `<div style="margin:8px 0 4px;background:var(--gray-50);border-radius:6px;padding:6px 10px">${rows}</div>`;
+  const bonusRows = (r.bonusEntitlements || []).map(item => `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--gray-100);font-size:0.78rem;color:var(--gray-700)">
+      <span>${window.App.escHtml(item.label)}</span>
+      <span style="font-weight:600">Cubierto por este pago</span>
+    </div>`).join('');
+  if (!rows && !bonusRows) return '';
+  return `<div style="margin:8px 0 4px;background:var(--gray-50);border-radius:6px;padding:6px 10px">${rows}${bonusRows}</div>`;
 }
 
 function renderReceiptsModal(s) {
