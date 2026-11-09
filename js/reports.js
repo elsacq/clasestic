@@ -21,6 +21,14 @@ function inDateRange(dateStr, fromDate, toDate) {
   return true;
 }
 
+function receiptBilledDate(receipt) {
+  return receipt.invoice?.issueDate || receipt.generatedAt || '';
+}
+
+function receiptPaidDate(receipt) {
+  return receipt.paidAt || receipt.invoice?.issueDate || receipt.generatedAt || '';
+}
+
 function csvEscape(value) {
   const str = String(value ?? '');
   if (str.includes(';') || str.includes('"') || str.includes('\n')) {
@@ -32,6 +40,7 @@ function csvEscape(value) {
 function buildReportsData(fromDate, toDate) {
   const billedByMonth = new Map();
   const paidByMonth = new Map();
+  const pendingByMonth = new Map();
 
   window.App.state.students.forEach(s => {
     (s.receipts || []).forEach(r => {
@@ -39,22 +48,32 @@ function buildReportsData(fromDate, toDate) {
       const amount = parseFloat(r.amount) || 0;
       if (amount <= 0) return;
 
-      if (inDateRange(r.generatedAt, fromDate, toDate)) {
-        const billedMonth = r.generatedAt.substring(0, 7);
+      const billedDate = receiptBilledDate(r);
+      if (inDateRange(billedDate, fromDate, toDate)) {
+        const billedMonth = billedDate.substring(0, 7);
         const billedCurrent = billedByMonth.get(billedMonth) || 0;
         billedByMonth.set(billedMonth, billedCurrent + amount);
 
-        // "Cobrado" se agrupa por mes de facturación (no de pago) para que
-        // cuadre con el total facturado una vez todo está pagado.
-        if (r.status === 'paid') {
-          const paidCurrent = paidByMonth.get(billedMonth) || 0;
-          paidByMonth.set(billedMonth, paidCurrent + amount);
+        if (r.status !== 'paid') {
+          const pendingCurrent = pendingByMonth.get(billedMonth) || 0;
+          pendingByMonth.set(billedMonth, pendingCurrent + amount);
         }
+      }
+
+      const paidDate = receiptPaidDate(r);
+      if (r.status === 'paid' && inDateRange(paidDate, fromDate, toDate)) {
+        const paidMonth = paidDate.substring(0, 7);
+        const paidCurrent = paidByMonth.get(paidMonth) || 0;
+        paidByMonth.set(paidMonth, paidCurrent + amount);
       }
     });
   });
 
-  const monthKeys = new Set([...billedByMonth.keys(), ...paidByMonth.keys()]);
+  const monthKeys = new Set([
+    ...billedByMonth.keys(),
+    ...paidByMonth.keys(),
+    ...pendingByMonth.keys(),
+  ]);
   const months = Array.from(monthKeys).sort().reverse();
 
   return months.map(month => {
@@ -65,7 +84,7 @@ function buildReportsData(fromDate, toDate) {
       monthLabel: getMonthLabel(month),
       billed,
       paid,
-      pending: Math.max(0, billed - paid)
+      pending: pendingByMonth.get(month) || 0,
     };
   });
 }
@@ -138,7 +157,7 @@ window.App.exportReportsCsv = function() {
 
   const totalBilled = rows.reduce((sum, row) => sum + row.billed, 0);
   const totalPaid = rows.reduce((sum, row) => sum + row.paid, 0);
-  const totalPending = Math.max(0, totalBilled - totalPaid);
+  const totalPending = rows.reduce((sum, row) => sum + row.pending, 0);
   lines.push([
     'TOTAL',
     totalBilled.toFixed(2).replace('.', ','),
@@ -195,7 +214,7 @@ window.App.exportReportsPdf = function() {
 
   const totalBilled = rows.reduce((sum, row) => sum + row.billed, 0);
   const totalPaid = rows.reduce((sum, row) => sum + row.paid, 0);
-  const totalPending = Math.max(0, totalBilled - totalPaid);
+  const totalPending = rows.reduce((sum, row) => sum + row.pending, 0);
 
   doc.setFont('helvetica', 'bold');
   doc.text(`Total facturado: ${window.App.fmtCurrency(totalBilled)}`, margin, 31);
