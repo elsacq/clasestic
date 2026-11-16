@@ -172,8 +172,7 @@ function processGenerateAllReceipts(students) {
   }
 }
 
-// Generates one advance receipt per student for the current month's monthly-billing groups,
-// one course-rate line per course and a separate line for each group with its own rate.
+// Generates one advance receipt per student for the current month's monthly-billing groups.
 function getMonthlyGroupReceiptPlans(month, studentIds) {
   const monthLabel = getMonthLabel(month);
   const plans = [];
@@ -216,17 +215,14 @@ function getMonthlyGroupReceiptPlans(month, studentIds) {
 
       const overrideGroups = courseGroups.filter(hasMonthlyFeeOverride);
       const regularGroups = courseGroups.filter(g => !hasMonthlyFeeOverride(g));
-      const unbilledRegularGroups = billedLegacyCourseIds.has(courseId)
-        ? []
-        : regularGroups.filter(g => !billedGroupIds.has(g.id));
-
-      if (unbilledRegularGroups.length) {
-        const [group, ...coveredGroups] = unbilledRegularGroups;
-        items.push({
-          month, groupId: group.id, courseId: course.id, courseName: course.name,
-          label: `Clases grupales ${monthLabel} ${course.name}`,
-          fee: getStudentCourseFee(s, course),
-          ...(coveredGroups.length ? { extraGroupIds: coveredGroups.map(g => g.id) } : {}),
+      if (!billedLegacyCourseIds.has(courseId)) {
+        regularGroups.filter(g => !billedGroupIds.has(g.id)).forEach(g => {
+          const showGroupName = regularGroups.length > 1;
+          items.push({
+            month, groupId: g.id, courseId: course.id, courseName: course.name,
+            label: `Clases grupales ${monthLabel} ${course.name}${showGroupName ? ` · ${g.name}` : ''}`,
+            fee: getStudentCourseFee(s, course, g),
+          });
         });
       }
 
@@ -476,7 +472,7 @@ function computeReceiptAmount(s, classIds) {
 }
 
 function hasMonthlyFeeOverride(group) {
-  return group.monthlyFeeOverride != null && group.monthlyFeeOverride !== '' &&
+  return Boolean(group) && group.monthlyFeeOverride != null && group.monthlyFeeOverride !== '' &&
     Number.isFinite(Number(group.monthlyFeeOverride));
 }
 
@@ -539,13 +535,17 @@ window.App.openStudentReceipts = function(studentId) {
   window.App.openModal('modal-receipts');
 }
 
-// Determines the monthly fee a student pays for a given course: the "normal" rate for
-// their primary course, and the "2nd subject" rate for any other course billed monthly
-// simultaneously (based on the student's actual monthly-billing group memberships).
-function getStudentCourseFee(s, course) {
+// Determines the monthly fee for a group: the primary course rate, the second-subject
+// rate for other courses or additional groups of the same course, unless overridden.
+function getStudentCourseFee(s, course, group = null) {
   if (!course) return 0;
   const studentGroups = window.App.state.groups.filter(g =>
-    g.billingMode === 'monthly' && !hasMonthlyFeeOverride(g) && (g.studentIds || []).includes(s.id));
+    g.billingMode === 'monthly' && g.active !== false && !hasMonthlyFeeOverride(g) &&
+    (g.studentIds || []).includes(s.id));
+  const sameCourseGroups = studentGroups.filter(g => g.courseId === course.id);
+  if (group && sameCourseGroups.findIndex(g => g.id === group.id) > 0) {
+    return parseFloat(course.monthlyFeeSecondSubject) || 0;
+  }
   const monthlyCourseIds = [...new Set(studentGroups.map(g => g.courseId).filter(Boolean))];
 
   if (monthlyCourseIds.length <= 1) return parseFloat(course.monthlyFeeNormal) || 0;
@@ -578,9 +578,13 @@ function getReceiptLineItems(s, r) {
       if (monthlyShown.has(monthKey)) return; // already billed this group+month
       monthlyShown.add(monthKey);
       const course = window.App.state.courses.find(co => co.id === group.courseId);
-      const fee = hasMonthlyFeeOverride(group) ? Number(group.monthlyFeeOverride) : getStudentCourseFee(s, course);
+      const fee = hasMonthlyFeeOverride(group) ? Number(group.monthlyFeeOverride) : getStudentCourseFee(s, course, group);
       const courseLabel = course ? course.name : group.name;
-      const groupLabel = hasMonthlyFeeOverride(group) ? ` · ${group.name}` : '';
+      const regularGroupsInCourse = window.App.state.groups.filter(g =>
+        g.billingMode === 'monthly' && g.active !== false && !hasMonthlyFeeOverride(g) &&
+        g.courseId === group.courseId && (g.studentIds || []).includes(s.id));
+      const groupLabel = hasMonthlyFeeOverride(group) || regularGroupsInCourse.length > 1
+        ? ` · ${group.name}` : '';
       items.push({ dateLabel: getMonthLabel(c.date.substring(0, 7)), typeLabel: `Cuota mensual · ${courseLabel}${groupLabel}`, fee, courseName: course?.name });
       return;
     }
