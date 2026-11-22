@@ -197,6 +197,92 @@ body {
 .mt-16 { margin-top: 20px; }
 .mt-8  { margin-top: 12px; }
 
+.class-view-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.student-class-group {
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.student-class-group summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.student-class-group summary::-webkit-details-marker { display: none; }
+.student-class-group summary::after {
+  content: '+';
+  position: absolute;
+  right: 16px;
+  color: var(--gray-500);
+  font-size: 1.15rem;
+}
+.student-class-group[open] summary::after { content: '−'; }
+.student-class-group summary { position: relative; padding-right: 40px; }
+
+.student-class-name {
+  color: var(--gray-800);
+  font-weight: 700;
+}
+
+.student-class-count {
+  color: var(--gray-500);
+  font-size: 0.78rem;
+}
+
+.student-class-rows {
+  border-top: 1px solid var(--gray-100);
+  padding: 0 12px;
+}
+
+.student-class-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  width: 100%;
+  padding: 12px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--gray-100);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.student-class-row:last-child { border-bottom: 0; }
+.student-class-row:hover { background: var(--gray-50); }
+.student-class-date { font-size: 0.82rem; font-weight: 600; white-space: nowrap; }
+.student-class-description, .student-class-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.student-class-bonus { color: var(--primary); font-size: 0.76rem; font-weight: 700; }
+.student-class-meta { margin-left: auto; color: var(--gray-500); font-size: 0.76rem; }
+.attendance-status {
+  padding: 3px 7px;
+  border-radius: 99px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.attendance-status.present { background: var(--success-light); color: #15803d; }
+.attendance-status.absent { background: var(--danger-light); color: #b91c1c; }
+.attendance-status.pending { background: var(--warning-light); color: #92400e; }
+
 /* =============================================
    Stats grid
    ============================================= */

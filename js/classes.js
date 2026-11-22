@@ -138,13 +138,27 @@ window.App.renderClasses = function() {
   window.App.applyClassFilters();
 }
 
+let classListView = 'class';
+
+function setClassListView(view) {
+  classListView = view;
+  const groupedByStudent = view === 'student';
+  document.getElementById('btn-class-view-list').className = `btn btn-sm ${groupedByStudent ? 'btn-secondary' : 'btn-primary'}`;
+  document.getElementById('btn-class-view-list').setAttribute('aria-pressed', String(!groupedByStudent));
+  document.getElementById('btn-class-view-student').className = `btn btn-sm ${groupedByStudent ? 'btn-primary' : 'btn-secondary'}`;
+  document.getElementById('btn-class-view-student').setAttribute('aria-pressed', String(groupedByStudent));
+  document.getElementById('class-filter-student').classList.toggle('hidden', !groupedByStudent);
+  document.getElementById('class-filter-future-wrap').classList.toggle('hidden', groupedByStudent);
+  window.App.applyClassFilters();
+}
+
 window.App.applyClassFilters = function() {
   const date        = document.getElementById('class-filter-date').value;
   const type        = document.getElementById('class-filter-type').value;
   const onlyFuture  = document.getElementById('class-filter-future').checked;
 
   let classes = [...window.App.state.classes].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-  if (onlyFuture) {
+  if (classListView === 'class' && onlyFuture) {
     const today = window.App.todayStr();
     const nowTime = window.App.currentTimeStr();
     classes = classes.filter(c => c.date > today || (c.date === today && c.time >= nowTime));
@@ -153,6 +167,11 @@ window.App.applyClassFilters = function() {
   if (type) classes = classes.filter(c => c.type === type);
 
   const list = document.getElementById('classes-list');
+  if (classListView === 'student') {
+    renderClassesByStudent(list, classes);
+    return;
+  }
+
   if (classes.length === 0) {
     list.innerHTML = `
       <div class="empty-state">
@@ -165,6 +184,78 @@ window.App.applyClassFilters = function() {
   } else {
     list.innerHTML = classes.map(c => buildClassCard(c)).join('');
   }
+}
+
+function renderClassesByStudent(list, classes) {
+  const search = document.getElementById('class-filter-student').value.trim().toLocaleLowerCase();
+  const today = window.App.todayStr();
+  const nowTime = window.App.currentTimeStr();
+  const students = [...window.App.state.students]
+    .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+    .filter(student => !search || student.name.toLocaleLowerCase().includes(search));
+
+  if (students.length === 0) {
+    const message = window.App.state.students.length === 0
+      ? 'No hay alumnos registrados'
+      : 'No se encontraron alumnos';
+    list.innerHTML = `<div class="empty-state"><p>${message}</p></div>`;
+    return;
+  }
+
+  list.innerHTML = students.map(student => {
+    const studentClasses = classes.filter(c => c.studentIds?.includes(student.id));
+    const attendanceCounts = { present: 0, absent: 0, pending: 0 };
+    studentClasses.forEach(c => {
+      if (c.date > today || (c.date === today && c.time >= nowTime)) {
+        attendanceCounts.pending += 1;
+      } else if (c.attendance?.[student.id] === false) {
+        attendanceCounts.absent += 1;
+      } else {
+        attendanceCounts.present += 1;
+      }
+    });
+
+    const summary = studentClasses.length
+      ? `${studentClasses.length} clase${studentClasses.length !== 1 ? 's' : ''} · ${attendanceCounts.present} asistencia${attendanceCounts.present !== 1 ? 's' : ''} · ${attendanceCounts.absent} ausencia${attendanceCounts.absent !== 1 ? 's' : ''} · ${attendanceCounts.pending} pendiente${attendanceCounts.pending !== 1 ? 's' : ''}`
+      : 'Sin clases registradas';
+    const rows = studentClasses.map(c => {
+      const isFuture = c.date > today || (c.date === today && c.time >= nowTime);
+      const attendance = isFuture
+        ? { label: 'Pendiente', className: 'pending' }
+        : c.attendance?.[student.id] === false
+          ? { label: 'Ausente', className: 'absent' }
+          : { label: 'Presente', className: 'present' };
+      const group = c.type === 'grupal' && c.groupId
+        ? window.App.state.groups?.find(g => g.id === c.groupId)
+        : null;
+      const bonusSession = getClassBonusSessionInfo(c);
+      const classLabel = c.type === 'grupal'
+        ? `Grupal${group ? ` · ${window.App.escHtml(group.name)}` : ''}`
+        : 'Individual';
+
+      return `
+        <button type="button" class="student-class-row" onclick="window.openClassDetail('${c.id}')">
+          <span class="student-class-date">${window.App.fmtDate(c.date)} · ${c.time}</span>
+          <span class="student-class-description">
+            <span class="class-type-badge ${c.type}">${classLabel}</span>
+            ${bonusSession ? `<span class="student-class-bonus">Bono · sesión ${bonusSession.sessionNumber}/${bonusSession.sessionsTotal}</span>` : ''}
+          </span>
+          <span class="student-class-meta">
+            <span class="attendance-status ${attendance.className}">${attendance.label}</span>
+            <span>${window.App.fmtCurrency(c.fee)} / alumno</span>
+          </span>
+        </button>`;
+    }).join('');
+
+    return `
+      <details class="student-class-group">
+        <summary>
+          <span class="student-class-name">${window.App.escHtml(student.name)}${student.active === false ? ' · Inactivo' : ''}</span>
+          <span class="student-class-count">${summary}</span>
+        </summary>
+        ${rows ? `<div class="student-class-rows">${rows}</div>` : ''}
+      </details>`;
+  }).join('');
 }
 
 function buildClassCard(c) {
@@ -782,6 +873,9 @@ window.App.initClassEvents = function() {
   document.getElementById('class-filter-date').addEventListener('change', window.App.applyClassFilters);
   document.getElementById('class-filter-type').addEventListener('change', window.App.applyClassFilters);
   document.getElementById('class-filter-future').addEventListener('change', window.App.applyClassFilters);
+  document.getElementById('class-filter-student').addEventListener('input', window.App.applyClassFilters);
+  document.getElementById('btn-class-view-list').addEventListener('click', () => setClassListView('class'));
+  document.getElementById('btn-class-view-student').addEventListener('click', () => setClassListView('student'));
   document.getElementById('class-repeat-weekly').addEventListener('change', (e) => {
     document.getElementById('class-repeat-until-wrap').classList.toggle('hidden', !e.target.checked);
   });

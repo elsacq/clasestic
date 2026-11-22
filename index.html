@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Academia TIC - Gestión de Clases</title>
-  <link rel="stylesheet" href="styles.css?v=20261021" />
+  <link rel="stylesheet" href="styles.css?v=20261122" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
@@ -80,6 +80,10 @@
         <h2>Clases</h2>
         <button id="btn-new-class" class="btn btn-primary btn-sm">+ Nueva</button>
       </div>
+      <div class="class-view-toggle" role="group" aria-label="Agrupar clases">
+        <button id="btn-class-view-list" class="btn btn-sm btn-primary" type="button" aria-pressed="true">Por clase</button>
+        <button id="btn-class-view-student" class="btn btn-sm btn-secondary" type="button" aria-pressed="false">Por alumno</button>
+      </div>
       <div class="search-bar">
         <input type="date" id="class-filter-date" />
         <select id="class-filter-type">
@@ -87,7 +91,8 @@
           <option value="individual">Individual</option>
           <option value="grupal">Grupal</option>
         </select>
-        <label class="filter-future-label">
+        <input type="search" id="class-filter-student" class="hidden" placeholder="Buscar alumno..." aria-label="Buscar alumno en el historial" />
+        <label id="class-filter-future-wrap" class="filter-future-label">
           <input type="checkbox" id="class-filter-future" checked />
           Solo futuras
         </label>
@@ -724,7 +729,7 @@
   <script src="js/github.js?v=20260928"></script>
   <script src="js/gcal.js?v=20260928"></script>
   <script src="js/students.js?v=20261019"></script>
-  <script src="js/classes.js?v=20261021"></script>
+  <script src="js/classes.js?v=20261122"></script>
   <script src="js/groups.js?v=20261022"></script>
   <script src="js/courses.js?v=20260928"></script>
   <script src="js/calendar.js?v=20260928"></script>
