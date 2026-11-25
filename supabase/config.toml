@@ -1,0 +1,8 @@
+[functions.manage-students]
+verify_jwt = true
+
+[functions.record-access]
+verify_jwt = true
+
+[functions.link-student]
+verify_jwt = true

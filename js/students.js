@@ -99,6 +99,7 @@ window.App.buildStudentCard = function(s) {
             ${bonusConfigText ? window.App.escHtml(bonusConfigText) : ''}
             ${(coursesText || studentGroups.length > 0 || bonusConfigText) && s.phone ? '<br>' : ''}
             ${s.phone ? '📱 ' + window.App.escHtml(s.phone) : ''}          ${s.phone && s.createdAt ? '<br>' : ''}
+            ${s.email ? '✉️ ' + window.App.escHtml(s.email) + '<br>' : ''}
           ${s.createdAt ? '📅 Desde: ' + window.App.fmtDate(s.createdAt) : ''}          </div>
           ${pendingReceipts.length > 0 ? `
             <button class="receipt-pending-badge" onclick="window.openStudentReceipts('${s.id}')">
@@ -136,6 +137,7 @@ window.App.openNewStudent = function() {
   document.getElementById('student-id').value      = '';
   document.getElementById('student-name').value    = '';
   document.getElementById('student-phone').value   = '';
+  document.getElementById('student-email').value   = '';
   document.getElementById('student-balance').value = '0';
   document.getElementById('student-bonus-sessions').value = '';
   document.getElementById('student-bonus-price').value = '';
@@ -151,6 +153,7 @@ window.App.openEditStudent = function(studentId) {
   document.getElementById('student-id').value      = s.id;
   document.getElementById('student-name').value    = s.name;
   document.getElementById('student-phone').value   = s.phone || '';
+  document.getElementById('student-email').value   = s.email || '';
   document.getElementById('student-balance').value = parseFloat(s.balance) || 0;
   document.getElementById('student-bonus-sessions').value = s.individualBonusConfig?.sessions ?? '';
   document.getElementById('student-bonus-price').value = s.individualBonusConfig?.price ?? '';
@@ -164,6 +167,7 @@ window.App.saveStudent = function(e) {
   const id      = document.getElementById('student-id').value;
   const name    = document.getElementById('student-name').value.trim();
   const phone   = document.getElementById('student-phone').value.trim();
+  const email   = document.getElementById('student-email').value.trim().toLowerCase();
   const courses = Array.from(document.getElementById('student-courses').selectedOptions).map(o => o.value);
   const primaryCourse = document.getElementById('student-primary-course').value || courses[0] || '';
   const balance = parseFloat(document.getElementById('student-balance').value) || 0;
@@ -174,6 +178,12 @@ window.App.saveStudent = function(e) {
 
   if (!name) {
     window.App.showToast('El nombre es obligatorio', 'error');
+    return;
+  }
+  if (email && window.App.state.students.some(student =>
+    student.id !== id && student.email?.trim().toLowerCase() === email
+  )) {
+    window.App.showToast('Ese correo de Google ya está asignado a otro alumno', 'error');
     return;
   }
   if (!Number.isInteger(bonusSessions) || bonusSessions < 0 ||
@@ -189,6 +199,7 @@ window.App.saveStudent = function(e) {
     if (s) {
       s.name = name;
       s.phone = phone;
+      s.email = email;
       s.courses = courses;
       s.course = courses[0] || '';
       s.primaryCourse = primaryCourse;
@@ -200,6 +211,7 @@ window.App.saveStudent = function(e) {
       id: window.App.uid(), 
       name, 
       phone, 
+      email,
       courses,
       course: courses[0] || '',
       primaryCourse,

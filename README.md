@@ -10,6 +10,7 @@ Gestionar de forma integral una academia de clases particulares, permitiendo el 
 
 - **Gestión de Estudiantes**: Alta, edición, eliminación y seguimiento de saldos
 - **Gestión de Grupos**: Organización de alumnos en grupos para clases colectivas; las cuotas mensuales pueden usar la tarifa del curso o una tarifa propia por grupo
+- **Vídeos y ejercicios**: Catálogo por grupo y fecha, con acceso Google OAuth, entregas de ejercicios, calificaciones y registro de clics/descargas
 - **Gestión de Clases**: Clases individuales y grupales con control de horarios y cuotas
 - **Gestión de Cursos**: Etiquetado informativo de alumnos por curso
 - **Calendario**: Vista mensual con todas las clases programadas
@@ -39,6 +40,8 @@ Gestionar de forma integral una academia de clases particulares, permitiendo el 
    - **GitHub Token**: Para sincronización automática
    - **Google Calendar Client ID**: Para integración con GCal
 3. ¡Empieza a gestionar tu academia!
+
+El portal de vídeos requiere Supabase y GitHub Pages. Consulta [SUPABASE_PORTAL_SETUP.md](./SUPABASE_PORTAL_SETUP.md) para configurarlo; la integración no funciona hasta completar esos pasos.
 
 ## 🔐 Seguridad
 

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <title>Vídeos y ejercicios · Academia TIC</title>
+  <link rel="stylesheet" href="styles.css?v=20261125" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js?v=20261125"></script>
+</head>
+<body>
+  <header class="portal-header">
+    <div>
+      <p class="eyebrow">Academia TIC</p>
+      <h1>Vídeos y ejercicios</h1>
+    </div>
+    <button id="btn-portal-logout" class="button secondary hidden" type="button">Cerrar sesión</button>
+  </header>
+  <main class="portal-main">
+    <section id="portal-config-error" class="panel hidden" role="alert">
+      <h2>Portal pendiente de configuración</h2>
+      <p>La academia todavía no ha configurado la conexión del portal.</p>
+    </section>
+    <section id="portal-login" class="panel hidden">
+      <h2>Acceso para alumnos</h2>
+      <p>Entra con la cuenta de Google cuyo correo está registrado en tu ficha de alumno.</p>
+      <button id="btn-google-login" class="button primary" type="button">Continuar con Google</button>
+      <p id="portal-login-message" class="message hidden" role="alert"></p>
+    </section>
+    <section id="portal-content" class="hidden">
+      <div class="welcome-row">
+        <div>
+          <h2 id="portal-welcome">Tus clases</h2>
+          <p>Los vídeos y ejercicios aparecen ordenados por fecha, del más reciente al más antiguo.</p>
+        </div>
+        <label class="group-filter">Grupo
+          <select id="portal-group-filter">
+            <option value="">Todos mis grupos</option>
+          </select>
+        </label>
+      </div>
+      <p id="portal-content-message" class="message hidden" role="status"></p>
+      <div id="portal-video-list"></div>
+    </section>
+  </main>
+  <script src="app.js?v=20261125"></script>
+</body>
+</html>

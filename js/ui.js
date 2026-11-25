@@ -54,6 +54,9 @@ window.App.switchTab = function(tabName) {
   if (tabName === 'groups') {
     window.App.renderGroups();
   }
+  if (tabName === 'videos') {
+    window.App.renderVideos();
+  }
   if (tabName === 'receipts') {
     window.App.renderReceipts();
   }
@@ -85,6 +88,9 @@ window.App.renderCurrentTab = function() {
   }
   if (tab === 'groups') {
     window.App.renderGroups();
+  }
+  if (tab === 'videos') {
+    window.App.renderVideos();
   }
   if (tab === 'receipts') {
     window.App.renderReceipts();

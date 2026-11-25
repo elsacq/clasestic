@@ -125,6 +125,7 @@ function initEvents() {
   window.App.initCourseEvents();
   window.App.initCalendarEvents();
   window.App.initDashboardEvents();
+  window.App.initVideoEvents();
 }
 
 // Main initialization

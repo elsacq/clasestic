@@ -4,8 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Academia TIC - Gestión de Clases</title>
-  <link rel="stylesheet" href="styles.css?v=20261122" />
+  <link rel="stylesheet" href="styles.css?v=20261125" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <script async src="https://accounts.google.com/gsi/client" onload="onGISLoaded()"></script>
@@ -145,6 +146,92 @@
       <div id="groups-list"></div>
     </section>
 
+    <!-- VIDEOS tab -->
+    <section id="tab-videos" class="tab-content">
+      <div class="section-header">
+        <h2>Vídeos y ejercicios</h2>
+      </div>
+      <div id="videos-config-warning" class="card hidden">
+        <strong>Falta configurar el portal.</strong>
+        <p>Completa la configuración de Supabase en <code>portal/config.js</code> y sigue la guía de <code>SUPABASE_PORTAL_SETUP.md</code>.</p>
+      </div>
+      <div id="videos-admin-login" class="card hidden">
+        <h3 class="portal-section-title">Acceso de administración</h3>
+        <p class="form-hint">Inicia sesión con la cuenta de Google autorizada como administradora.</p>
+        <form id="videos-admin-login-form">
+          <button class="btn btn-primary" type="submit">Continuar con Google</button>
+        </form>
+        <p id="videos-admin-login-error" class="portal-error hidden" role="alert"></p>
+      </div>
+      <div id="videos-admin-panel" class="hidden">
+        <div class="card portal-admin-toolbar">
+          <div>
+            <strong>Portal de alumnos</strong>
+            <p id="videos-portal-url" class="form-hint"></p>
+          </div>
+          <button id="btn-videos-admin-logout" class="btn btn-sm btn-secondary" type="button">Cerrar sesión</button>
+        </div>
+        <div class="card">
+          <h3 class="portal-section-title">Accesos de alumnos</h3>
+          <p class="form-hint">Sincroniza alumnos y grupos. Cada alumno debe tener guardado el mismo correo con el que iniciará sesión en Google.</p>
+          <button id="btn-sync-portal-students" class="btn btn-sm btn-secondary" type="button">Sincronizar correos y grupos</button>
+          <p id="portal-sync-status" class="form-hint" aria-live="polite"></p>
+          <div id="portal-accounts-list"></div>
+        </div>
+        <div class="card">
+          <h3 id="video-form-title" class="portal-section-title">Añadir vídeo</h3>
+          <form id="video-form">
+            <input id="video-id" type="hidden" />
+            <div class="form-group">
+              <label for="video-group">Grupo *</label>
+              <select id="video-group" required></select>
+            </div>
+            <div class="form-group">
+              <label for="video-date">Fecha de la clase *</label>
+              <input id="video-date" type="date" required />
+            </div>
+            <div class="form-group">
+              <label for="video-title">Título *</label>
+              <input id="video-title" type="text" maxlength="160" required placeholder="Tema o nombre de la clase" />
+            </div>
+            <div class="form-group">
+              <label for="video-url">Enlace del vídeo *</label>
+              <input id="video-url" type="url" required placeholder="https://..." />
+            </div>
+            <div class="form-group">
+              <label for="video-password">Contraseña del vídeo</label>
+              <input id="video-password" type="text" maxlength="160" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="video-exercise-file">Excel de ejercicios (.xls o .xlsx)</label>
+              <input id="video-exercise-file" type="file" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+              <p id="video-current-file" class="form-hint"></p>
+            </div>
+            <label class="filter-future-label video-visible-option">
+              <input id="video-visible" type="checkbox" checked />
+              Visible para los alumnos
+            </label>
+            <div class="form-actions">
+              <button id="btn-video-cancel-edit" class="btn btn-secondary hidden" type="button">Cancelar edición</button>
+              <button class="btn btn-primary" type="submit">Guardar vídeo</button>
+            </div>
+          </form>
+        </div>
+        <div id="videos-admin-list"></div>
+        <div class="card">
+          <h3 class="portal-section-title">Ejercicios entregados</h3>
+          <div id="video-submissions-list"></div>
+        </div>
+        <div class="card">
+          <div class="portal-admin-toolbar">
+            <h3 class="portal-section-title">Actividad de alumnos</h3>
+            <button id="btn-refresh-portal-activity" class="btn btn-sm btn-secondary" type="button">Actualizar</button>
+          </div>
+          <div id="portal-access-logs"></div>
+        </div>
+      </div>
+    </section>
+
     <!-- RECEIPTS tab -->
     <section id="tab-receipts" class="tab-content">
       <div class="section-header">
@@ -265,6 +352,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       <span>Grupos</span>
     </button>
+    <button class="nav-btn" data-tab="videos">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></svg>
+      <span>Vídeos</span>
+    </button>
     <button class="nav-btn" data-tab="receipts">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
       <span>Recibos</span>
@@ -296,6 +387,11 @@
         <div class="form-group">
           <label for="student-phone">Teléfono</label>
           <input type="tel" id="student-phone" placeholder="6XX XXX XXX" />
+        </div>
+        <div class="form-group">
+          <label for="student-email">Correo de Google para el portal de vídeos</label>
+          <input type="email" id="student-email" autocomplete="email" placeholder="alumno@gmail.com" />
+          <p class="form-hint">Debe coincidir con la cuenta de Google que usará el alumno para entrar.</p>
         </div>
         <div class="form-group">
           <label for="student-courses">Cursos</label>
@@ -724,11 +820,12 @@
   <script src="js/config.js?v=20260928"></script>
   <script src="js/utils.js?v=20260928"></script>
   <script src="js/state.js?v=20260928"></script>
-  <script src="js/ui.js?v=20260928"></script>
+  <script src="js/ui.js?v=20261125"></script>
   <script src="js/persistence.js?v=20260928"></script>
   <script src="js/github.js?v=20260928"></script>
   <script src="js/gcal.js?v=20260928"></script>
-  <script src="js/students.js?v=20261019"></script>
+  <script src="js/students.js?v=20261125"></script>
+  <script src="portal/config.js?v=20261125"></script>
   <script src="js/classes.js?v=20261122"></script>
   <script src="js/groups.js?v=20261022"></script>
   <script src="js/courses.js?v=20260928"></script>
@@ -736,6 +833,7 @@
   <script src="js/dashboard.js?v=20261021"></script>
   <script src="js/receipts.js?v=20261116-2"></script>
   <script src="js/reports.js?v=20261109"></script>
+  <script src="js/videos.js?v=20261125"></script>
   <script src="js/main.js?v=20261018"></script>
 </body>
 </html>

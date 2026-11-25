@@ -1,0 +1,97 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
+
+const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+Deno.serve(async (request: Request) => {
+  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (request.method !== "POST") return jsonResponse({ error: "Método no permitido." }, 405);
+  const authorization = request.headers.get("Authorization");
+  if (!authorization?.startsWith("Bearer ")) return jsonResponse({ error: "Sesión requerida." }, 401);
+
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: "La solicitud no contiene JSON válido." }, 400);
+  }
+  const token = authorization.slice("Bearer ".length);
+  const authClient = createClient(supabaseUrl, anonKey, { auth: { persistSession: false } });
+  const verified = await authClient.auth.getUser(token);
+  if (verified.error || !verified.data.user) return jsonResponse({ error: "La sesión no es válida." }, 401);
+
+  const service = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
+  const profile = await service.from("portal_profiles")
+    .select("student_id").eq("user_id", verified.data.user.id).maybeSingle();
+  if (profile.error) return jsonResponse({ error: profile.error.message }, 500);
+  if (!profile.data) return jsonResponse({ error: "La cuenta de Google todavía no está vinculada a un alumno." }, 403);
+  const student = await service.from("portal_students").select("enabled")
+    .eq("id", profile.data.student_id).maybeSingle();
+  if (student.error) return jsonResponse({ error: student.error.message }, 500);
+  if (!student.data?.enabled) return jsonResponse({ error: "La cuenta está desactivada." }, 403);
+
+  const action = body.action;
+  let videoId = typeof body.video_id === "string" ? body.video_id : "";
+  let eventType: string;
+  let filePath = "";
+  let fileName = "";
+  if (action === "submission") {
+    const submissionId = typeof body.submission_id === "string" ? body.submission_id : "";
+    const submission = await service.from("student_submissions")
+      .select("id,video_id,file_path,file_name")
+      .eq("id", submissionId).eq("student_id", profile.data.student_id).maybeSingle();
+    if (submission.error) return jsonResponse({ error: submission.error.message }, 500);
+    if (!submission.data) return jsonResponse({ error: "No se encontró el ejercicio entregado." }, 404);
+    videoId = submission.data.video_id;
+    filePath = submission.data.file_path;
+    fileName = submission.data.file_name;
+    eventType = "submission_downloaded";
+  } else if (action === "video" || action === "exercise") {
+    eventType = action === "video" ? "video_clicked" : "exercise_downloaded";
+  } else {
+    return jsonResponse({ error: "Acción de acceso no válida." }, 400);
+  }
+  if (!videoId) return jsonResponse({ error: "Falta el vídeo solicitado." }, 400);
+
+  const videoResult = await service.from("portal_videos").select(
+    "id,group_id,has_exercise,exercise_filename,visible",
+  ).eq("id", videoId).maybeSingle();
+  if (videoResult.error) return jsonResponse({ error: videoResult.error.message }, 500);
+  const video = videoResult.data;
+  if (!video || !video.visible) return jsonResponse({ error: "El vídeo no está disponible." }, 404);
+  const membership = await service.from("portal_student_groups")
+    .select("student_id").eq("student_id", profile.data.student_id).eq("group_id", video.group_id).maybeSingle();
+  if (membership.error) return jsonResponse({ error: membership.error.message }, 500);
+  if (!membership.data) return jsonResponse({ error: "No tienes acceso a este grupo." }, 403);
+
+  const secretResult = await service.from("portal_video_secrets")
+    .select("video_url,video_password,exercise_path").eq("video_id", videoId).maybeSingle();
+  if (secretResult.error) return jsonResponse({ error: secretResult.error.message }, 500);
+  if (!secretResult.data) return jsonResponse({ error: "Los datos del vídeo no están disponibles." }, 404);
+  const secret = secretResult.data;
+  if (action === "exercise") {
+    if (!video.has_exercise || !secret.exercise_path) {
+      return jsonResponse({ error: "Este vídeo no tiene un Excel adjunto." }, 404);
+    }
+    filePath = secret.exercise_path;
+    fileName = video.exercise_filename || "ejercicios.xlsx";
+  }
+
+  const log = await service.from("portal_access_logs").insert({
+    user_id: verified.data.user.id,
+    student_id: profile.data.student_id,
+    video_id: videoId,
+    event_type: eventType,
+  });
+  if (log.error) return jsonResponse({ error: `No se pudo registrar el acceso: ${log.error.message}` }, 500);
+
+  if (action === "video") {
+    return jsonResponse({ url: secret.video_url, password: secret.video_password });
+  }
+  const signedUrl = await service.storage.from("portal-files")
+    .createSignedUrl(filePath, 300, { download: fileName });
+  if (signedUrl.error) return jsonResponse({ error: signedUrl.error.message }, 500);
+  return jsonResponse({ url: signedUrl.data.signedUrl, file_name: fileName });
+});

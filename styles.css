@@ -128,6 +128,7 @@ body {
 .nav-btn svg { width: 20px; height: 20px; }
 .nav-btn.active { color: var(--primary); }
 .nav-btn.active span { color: var(--primary); }
+.bottom-nav .nav-btn { font-size: 0.56rem; }
 
 /* =============================================
    Buttons
@@ -202,6 +203,56 @@ body {
   gap: 8px;
   margin-bottom: 12px;
 }
+
+.portal-section-title {
+  margin-bottom: 10px;
+  color: var(--gray-700);
+  font-size: 0.95rem;
+}
+
+.portal-admin-toolbar, .video-admin-card, .portal-account-row, .video-admin-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.portal-account-list { margin-top: 12px; }
+.portal-account-row {
+  padding: 9px 0;
+  border-top: 1px solid var(--gray-100);
+}
+.portal-account-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.portal-account-row span, .video-submission-heading span, .video-submission-heading small {
+  color: var(--gray-500);
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+.portal-activity-list { display: flex; flex-direction: column; }
+.portal-activity-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.8fr) minmax(130px, 1fr) minmax(130px, 0.8fr);
+  gap: 8px;
+  padding: 9px 0;
+  border-top: 1px solid var(--gray-100);
+  font-size: 0.76rem;
+}
+.portal-activity-row span, .portal-activity-row time { color: var(--gray-500); }
+.portal-error { color: #b91c1c !important; }
+.video-visible-option { margin: 10px 0; }
+.video-admin-card h3 { margin: 0; color: var(--gray-800); font-size: 0.9rem; }
+.video-admin-card .form-hint { margin: 3px 0 0; }
+.video-admin-actions { justify-content: flex-start; flex-wrap: wrap; }
+.video-submission-card { display: flex; flex-direction: column; gap: 10px; }
+.video-submission-heading { display: flex; flex-direction: column; gap: 3px; }
+.video-submission-heading small { font-size: 0.72rem; }
+.grade-field { display: flex; align-items: center; gap: 6px; color: var(--gray-600); font-size: 0.8rem; }
+.grade-field input { width: 90px; }
 
 .student-class-group {
   background: var(--white);
@@ -992,6 +1043,10 @@ input::placeholder { color: var(--gray-400); }
   .modal { align-items: center; }
   .modal-box { border-radius: var(--radius); max-height: 85dvh; }
   .stats-grid { grid-template-columns: repeat(4, 1fr); }
+}
+@media (max-width: 639px) {
+  .portal-activity-row { grid-template-columns: 1fr; gap: 3px; }
+  .portal-admin-toolbar, .video-admin-card { align-items: flex-start; flex-direction: column; }
 }
 
 /* =============================================
