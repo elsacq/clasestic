@@ -12,7 +12,9 @@ function getPortalClient() {
   if (portalClient) return portalClient;
   const config = window.PORTAL_CONFIG || {};
   if (!config.supabaseUrl || !config.supabaseAnonKey || !window.supabase?.createClient) return null;
-  portalClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+  portalClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey, {
+    auth: { detectSessionInUrl: false },
+  });
   return portalClient;
 }
 
@@ -36,6 +38,38 @@ function setVideoAdminState(isAdmin) {
 
 function portalErrorMessage(error) {
   return error?.message || 'No se pudo completar la operación. Revisa la conexión y vuelve a intentarlo.';
+}
+
+function clearAdminOAuthCallbackParams(url) {
+  ['code', 'error', 'error_code', 'error_description', 'state'].forEach(param => {
+    url.searchParams.delete(param);
+  });
+  const hashParams = new URLSearchParams(url.hash.slice(1));
+  ['access_token', 'refresh_token', 'expires_in', 'expires_at', 'token_type', 'error', 'error_description', 'error_code', 'state']
+    .forEach(param => hashParams.delete(param));
+  url.hash = hashParams.toString();
+  window.history.replaceState(null, document.title, `${url.pathname}${url.search}${url.hash}`);
+}
+
+async function completeAdminOAuthCallback(client) {
+  const url = new URL(window.location.href);
+  const hashParams = new URLSearchParams(url.hash.slice(1));
+  const oauthError = url.searchParams.get('error_description')
+    || url.searchParams.get('error')
+    || hashParams.get('error_description')
+    || hashParams.get('error');
+  if (oauthError) {
+    clearAdminOAuthCallbackParams(url);
+    throw new Error(`Google no pudo completar el acceso: ${oauthError}`);
+  }
+
+  const code = url.searchParams.get('code');
+  if (!code) return;
+  const { error } = await client.auth.exchangeCodeForSession(code);
+  clearAdminOAuthCallbackParams(url);
+  if (error) {
+    throw new Error(`Supabase no pudo validar el retorno de Google: ${error.message}`);
+  }
 }
 
 async function portalFunctionErrorMessage(error) {
@@ -489,6 +523,7 @@ async function signInVideoAdmin(event) {
 async function restoreVideoAdminSession() {
   const client = getPortalClient();
   if (!client) return;
+  await completeAdminOAuthCallback(client);
   const { data, error } = await client.auth.getSession();
   if (error) throw error;
   if (!data.session) {
