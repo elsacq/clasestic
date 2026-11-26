@@ -166,6 +166,10 @@ async function init() {
   
   // Now render with the latest data (either from GitHub or local)
   window.App.renderDashboard();
+  if (sessionStorage.getItem('clasestic-oauth-return-tab') === 'videos') {
+    sessionStorage.removeItem('clasestic-oauth-return-tab');
+    window.App.switchTab('videos');
+  }
 }
 
 // Make functions globally available for onclick handlers and Google SDK callback

@@ -152,18 +152,27 @@ function renderVideoSubmissions(submissions, groups) {
   }).join('');
 }
 
+function getPortalEligibleStudents() {
+  const groupedStudentIds = new Set(window.App.state.groups
+    .filter(group => group.active !== false)
+    .flatMap(group => group.studentIds || []));
+  return window.App.state.students.filter(student =>
+    student.active !== false && groupedStudentIds.has(student.id)
+  );
+}
+
 function renderPortalAccounts() {
   const list = document.getElementById('portal-accounts-list');
   const groupsByStudent = new Map();
-  window.App.state.groups.forEach(group => {
+  window.App.state.groups.filter(group => group.active !== false).forEach(group => {
     (group.studentIds || []).forEach(studentId => {
       if (!groupsByStudent.has(studentId)) groupsByStudent.set(studentId, []);
       groupsByStudent.get(studentId).push(group.name);
     });
   });
-  const students = [...window.App.state.students].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  const students = getPortalEligibleStudents().sort((a, b) => a.name.localeCompare(b.name, 'es'));
   if (students.length === 0) {
-    list.innerHTML = '<p class="form-hint">No hay alumnos en la aplicación.</p>';
+    list.innerHTML = '<p class="form-hint">No hay alumnos activos asignados a grupos activos.</p>';
     return;
   }
   list.innerHTML = `<div class="portal-account-list">${students.map(student => {
@@ -367,10 +376,12 @@ async function syncPortalStudents() {
   const status = document.getElementById('portal-sync-status');
   status.textContent = 'Sincronizando correos y grupos...';
   try {
+    const students = getPortalEligibleStudents();
+    const studentIds = new Set(students.map(student => student.id));
     const { data, error } = await client.functions.invoke('manage-students', {
       body: {
         action: 'sync',
-        students: window.App.state.students.map(student => ({
+        students: students.map(student => ({
           id: student.id,
           name: student.name,
           email: student.email || '',
@@ -380,7 +391,9 @@ async function syncPortalStudents() {
           id: group.id,
           name: group.name,
           active: group.active !== false,
-          studentIds: group.studentIds || [],
+          studentIds: group.active !== false
+            ? (group.studentIds || []).filter(studentId => studentIds.has(studentId))
+            : [],
         })),
       },
     });
@@ -388,7 +401,7 @@ async function syncPortalStudents() {
     const updated = data.results.filter(item => item.status === 'synced').length;
     const failures = data.results.filter(item => item.status === 'error');
     status.classList.toggle('portal-error', failures.length > 0);
-    status.textContent = `${updated} alumnos sincronizados${failures.length ? `, ${failures.length} con error: ${failures.map(item => `${item.name}: ${item.message}`).join('; ')}` : ''}. Los alumnos entran con su cuenta de Google.`;
+    status.textContent = `${updated} alumnos activos con grupo sincronizados${failures.length ? `, ${failures.length} con error: ${failures.map(item => `${item.name}: ${item.message}`).join('; ')}` : ''}. Los alumnos entran con su cuenta de Google.`;
     renderPortalAccounts();
     await loadAdminVideos();
   } catch (error) {
@@ -439,14 +452,21 @@ async function signInVideoAdmin(event) {
   event.preventDefault();
   const client = getPortalClient();
   showVideoMessage('videos-admin-login-error', '');
-  const { error } = await client.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: window.location.href,
-      queryParams: { prompt: 'select_account' },
-    },
-  });
-  if (error) {
+  sessionStorage.setItem('clasestic-oauth-return-tab', 'videos');
+  try {
+    const { error } = await client.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.href,
+        queryParams: { prompt: 'select_account' },
+      },
+    });
+    if (error) {
+      sessionStorage.removeItem('clasestic-oauth-return-tab');
+      showVideoMessage('videos-admin-login-error', portalErrorMessage(error), true);
+    }
+  } catch (error) {
+    sessionStorage.removeItem('clasestic-oauth-return-tab');
     showVideoMessage('videos-admin-login-error', portalErrorMessage(error), true);
     return;
   }
