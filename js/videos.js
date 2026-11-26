@@ -491,7 +491,26 @@ async function restoreVideoAdminSession() {
   if (!client) return;
   const { data, error } = await client.auth.getSession();
   if (error) throw error;
-  if (!data.session) return;
+  if (!data.session) {
+    if (sessionStorage.getItem('clasestic-oauth-return-tab') === 'videos') {
+      const callbackParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.slice(1));
+      const oauthError = callbackParams.get('error_description')
+        || callbackParams.get('error')
+        || hashParams.get('error_description')
+        || hashParams.get('error');
+      showVideoMessage(
+        'videos-admin-login-error',
+        oauthError
+          ? `Google no pudo completar el acceso: ${oauthError}`
+          : 'Google ha devuelto a la aplicación, pero Supabase no recuperó la sesión. Comprueba que el navegador permita el almacenamiento del sitio y vuelve a iniciar sesión.',
+        true,
+      );
+      sessionStorage.removeItem('clasestic-oauth-return-tab');
+    }
+    return;
+  }
+  sessionStorage.removeItem('clasestic-oauth-return-tab');
   const admin = await client.from('portal_admins').select('user_id').eq('user_id', data.session.user.id).maybeSingle();
   if (admin.error) throw admin.error;
   if (!admin.data) {
@@ -521,6 +540,7 @@ window.App.renderVideos = async function() {
     try {
       await restoreVideoAdminSession();
     } catch (error) {
+      sessionStorage.removeItem('clasestic-oauth-return-tab');
       showVideoMessage('videos-admin-login-error', portalErrorMessage(error), true);
     }
     return;

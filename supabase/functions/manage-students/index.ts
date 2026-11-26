@@ -6,24 +6,34 @@ const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 async function requireAdmin(request: Request, service: ReturnType<typeof createClient>) {
   const authorization = request.headers.get("Authorization");
-  if (!authorization?.startsWith("Bearer ")) return null;
+  if (!authorization?.startsWith("Bearer ")) {
+    return jsonResponse({ error: "Sesión requerida. Inicia sesión de nuevo." }, 401);
+  }
   const user = await service.auth.getUser(authorization.slice("Bearer ".length));
-  if (user.error || !user.data.user) return null;
+  if (user.error || !user.data.user) {
+    return jsonResponse({ error: "La sesión de Google ha caducado o no es válida. Cierra sesión y vuelve a entrar." }, 401);
+  }
   const role = await service.from("portal_admins").select("user_id")
     .eq("user_id", user.data.user.id).maybeSingle();
-  return role.error || !role.data ? null : user.data.user;
+  if (role.error) {
+    return jsonResponse({ error: `No se pudieron comprobar los permisos de administración: ${role.error.message}` }, 500);
+  }
+  if (!role.data) {
+    const email = user.data.user.email ? ` (${user.data.user.email})` : "";
+    return jsonResponse({
+      error: `La cuenta autenticada${email} no está autorizada en portal_admins. Comprueba que sea la misma cuenta Google que verificaste en Supabase.`,
+    }, 403);
+  }
+  return user.data.user;
 }
 
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return jsonResponse({ error: "Método no permitido." }, 405);
 
-  const authorization = request.headers.get("Authorization");
-  if (!authorization?.startsWith("Bearer ")) return jsonResponse({ error: "Sesión requerida." }, 401);
   const service = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
-  if (!await requireAdmin(request, service)) {
-    return jsonResponse({ error: "Se requieren permisos de administración." }, 403);
-  }
+  const admin = await requireAdmin(request, service);
+  if (admin instanceof Response) return admin;
 
   let body: Record<string, unknown>;
   try {
