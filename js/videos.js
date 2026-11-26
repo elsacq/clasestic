@@ -38,6 +38,20 @@ function portalErrorMessage(error) {
   return error?.message || 'No se pudo completar la operación. Revisa la conexión y vuelve a intentarlo.';
 }
 
+async function portalFunctionErrorMessage(error) {
+  const response = error?.context;
+  if (!(response instanceof Response)) return portalErrorMessage(error);
+
+  try {
+    const body = await response.clone().json();
+    if (typeof body?.error === 'string') return body.error;
+    if (typeof body?.message === 'string') return body.message;
+  } catch {
+    // The function may return a non-JSON error response.
+  }
+  return `${portalErrorMessage(error)} (HTTP ${response.status})`;
+}
+
 async function loadAdminVideos() {
   const client = getPortalClient();
   const [groupsResult, videosResult, secretsResult, submissionsResult, activityResult] = await Promise.all([
@@ -405,7 +419,7 @@ async function syncPortalStudents() {
     renderPortalAccounts();
     await loadAdminVideos();
   } catch (error) {
-    status.textContent = `Error al sincronizar: ${portalErrorMessage(error)}`;
+    status.textContent = `Error al sincronizar: ${await portalFunctionErrorMessage(error)}`;
     status.classList.add('portal-error');
   }
 }
