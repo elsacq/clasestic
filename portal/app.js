@@ -10,6 +10,8 @@ let currentStudent = null;
 let portalGroups = [];
 let portalVideos = [];
 let portalSubmissions = [];
+let portalPasswords = new Map();
+let portalPasswordLoadError = '';
 let isAdminPreview = false;
 
 function escapeHtml(value) {
@@ -114,6 +116,23 @@ async function loadStudentContent(previewGroupId = '') {
     ...secretsByVideo.get(video.id),
     group_ids: groupIdsByVideo.get(video.id) || [video.group_id],
   }));
+  portalPasswords = isPreview
+    ? new Map(portalVideos.map(video => [video.id, video.video_password || null]))
+    : new Map();
+  portalPasswordLoadError = '';
+  if (!isPreview && portalVideos.length) {
+    const { data, error: passwordError } = await client.functions.invoke('record-access', {
+      body: { action: 'passwords' },
+    });
+    if (passwordError) {
+      portalPasswordLoadError = await functionErrorMessage(passwordError);
+    } else {
+      portalPasswords = new Map((data?.passwords || []).map(item => [item.video_id, item.password || null]));
+    }
+    portalVideos.forEach(video => {
+      if (!portalPasswords.has(video.id)) portalPasswords.set(video.id, null);
+    });
+  }
   portalSubmissions = submissionsResult.data || [];
   document.getElementById('portal-welcome').textContent = currentStudent?.name
     ? `Hola, ${currentStudent.name}`
@@ -132,7 +151,9 @@ async function loadStudentContent(previewGroupId = '') {
     ? `Vista previa: ${portalGroups.find(group => group.id === previewGroupId).name}`
     : currentStudent?.name ? `Hola, ${currentStudent.name}` : 'Tus clases';
   renderStudentVideos();
-  setMessage('portal-content-message', '');
+  setMessage('portal-content-message', portalPasswordLoadError
+    ? `No se pudieron cargar automáticamente los códigos de acceso: ${portalPasswordLoadError}`
+    : '');
 }
 
 function renderStudentVideos() {
@@ -167,13 +188,18 @@ function renderStudentVideos() {
 
 function renderStudentVideo(video) {
   const submissions = portalSubmissions.filter(item => item.video_id === video.id);
+  const password = portalPasswords.get(video.id);
+  const passwordLabel = portalPasswordLoadError
+    ? 'No se pudo cargar el código de acceso.'
+    : password
+      ? `Código de acceso: ${escapeHtml(password)}`
+      : 'Este vídeo no tiene contraseña.';
   return `
     <article class="video-card" data-video-card="${escapeHtml(video.id)}">
       <div class="video-date">${fileDate(video.class_date)}</div>
       <h4>${escapeHtml(video.title)}</h4>
       <div class="video-meta">
-        <button class="button secondary" type="button" data-show-password="${escapeHtml(video.id)}">Mostrar código de acceso</button>
-        <span class="video-password hidden" data-video-password="${escapeHtml(video.id)}"></span>
+        <span class="video-password" data-video-password="${escapeHtml(video.id)}">${passwordLabel}</span>
       </div>
       <div class="video-actions">
         <button class="button primary" type="button" data-open-video="${escapeHtml(video.id)}">Abrir vídeo</button>
@@ -204,30 +230,6 @@ async function callAccessFunction(body) {
   const { data, error } = await client.functions.invoke('record-access', { body });
   if (error) throw new Error(await functionErrorMessage(error));
   return data;
-}
-
-async function showVideoPassword(videoId, button) {
-  button.disabled = true;
-  button.textContent = 'Cargando código…';
-  try {
-    const video = portalVideos.find(item => item.id === videoId);
-    const data = isAdminPreview
-      ? { password: video?.video_password || null }
-      : await callAccessFunction({ action: 'password', video_id: videoId });
-    const card = document.querySelector(`[data-video-card="${CSS.escape(videoId)}"]`);
-    const password = card?.querySelector('[data-video-password]');
-    if (!password) throw new Error('No se pudo mostrar el código de acceso.');
-    password.textContent = data.password
-      ? `Código de acceso: ${data.password}`
-      : 'Este vídeo no tiene contraseña.';
-    password.classList.remove('hidden');
-    button.textContent = 'Código de acceso';
-  } catch (error) {
-    button.textContent = 'Mostrar código de acceso';
-    setMessage('portal-content-message', error.message, true);
-  } finally {
-    button.disabled = false;
-  }
 }
 
 async function openVideo(videoId) {
@@ -383,11 +385,9 @@ async function startPortal() {
   });
   document.getElementById('portal-group-filter').addEventListener('change', renderStudentVideos);
   document.getElementById('portal-video-list').addEventListener('click', event => {
-    const passwordButton = event.target.closest('[data-show-password]');
     const openButton = event.target.closest('[data-open-video]');
     const exerciseButton = event.target.closest('[data-download-exercise]');
     const submissionButton = event.target.closest('[data-download-submission]');
-    if (passwordButton) showVideoPassword(passwordButton.dataset.showPassword, passwordButton);
     if (openButton) openVideo(openButton.dataset.openVideo);
     if (exerciseButton) downloadFile('exercise', exerciseButton.dataset.downloadExercise);
     if (submissionButton) downloadFile('submission', submissionButton.dataset.downloadSubmission);

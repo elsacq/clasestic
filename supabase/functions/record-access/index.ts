@@ -32,6 +32,37 @@ Deno.serve(async (request: Request) => {
   if (student.error) return jsonResponse({ error: student.error.message }, 500);
   if (!student.data?.enabled) return jsonResponse({ error: "La cuenta está desactivada." }, 403);
 
+  if (body.action === "passwords") {
+    const [studentGroups, enabledGroups] = await Promise.all([
+      service.from("portal_student_groups").select("group_id").eq("student_id", profile.data.student_id),
+      service.from("portal_groups").select("id").eq("enabled", true),
+    ]);
+    const membershipError = studentGroups.error || enabledGroups.error;
+    if (membershipError) return jsonResponse({ error: membershipError.message }, 500);
+    const studentGroupIds = new Set((studentGroups.data || []).map(group => group.group_id));
+    const activeGroupIds = (enabledGroups.data || [])
+      .map(group => group.id)
+      .filter(groupId => studentGroupIds.has(groupId));
+    if (!activeGroupIds.length) return jsonResponse({ passwords: [] });
+
+    const videoGroups = await service.from("portal_video_groups")
+      .select("video_id").in("group_id", activeGroupIds);
+    if (videoGroups.error) return jsonResponse({ error: videoGroups.error.message }, 500);
+    const assignedVideoIds = [...new Set((videoGroups.data || []).map(group => group.video_id))];
+    if (!assignedVideoIds.length) return jsonResponse({ passwords: [] });
+
+    const visibleVideos = await service.from("portal_videos")
+      .select("id").in("id", assignedVideoIds).eq("visible", true);
+    if (visibleVideos.error) return jsonResponse({ error: visibleVideos.error.message }, 500);
+    const visibleVideoIds = (visibleVideos.data || []).map(video => video.id);
+    if (!visibleVideoIds.length) return jsonResponse({ passwords: [] });
+
+    const secrets = await service.from("portal_video_secrets")
+      .select("video_id,video_password").in("video_id", visibleVideoIds);
+    if (secrets.error) return jsonResponse({ error: secrets.error.message }, 500);
+    return jsonResponse({ passwords: secrets.data || [] });
+  }
+
   const action = body.action;
   let videoId = typeof body.video_id === "string" ? body.video_id : "";
   let eventType: string;
