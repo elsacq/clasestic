@@ -87,7 +87,20 @@ async function loadStudentContent() {
   if (error) throw error;
 
   portalGroups = groupsResult.data || [];
-  portalVideos = videosResult.data || [];
+  const videoIds = (videosResult.data || []).map(video => video.id);
+  const videoGroupsResult = videoIds.length
+    ? await client.from('portal_video_groups').select('video_id,group_id').in('video_id', videoIds)
+    : { data: [], error: null };
+  if (videoGroupsResult.error) throw videoGroupsResult.error;
+  const groupIdsByVideo = new Map();
+  (videoGroupsResult.data || []).forEach(({ video_id: videoId, group_id: groupId }) => {
+    if (!groupIdsByVideo.has(videoId)) groupIdsByVideo.set(videoId, []);
+    groupIdsByVideo.get(videoId).push(groupId);
+  });
+  portalVideos = (videosResult.data || []).map(video => ({
+    ...video,
+    group_ids: groupIdsByVideo.get(video.id) || [video.group_id],
+  }));
   portalSubmissions = submissionsResult.data || [];
   document.getElementById('portal-welcome').textContent = currentStudent?.name
     ? `Hola, ${currentStudent.name}`
@@ -111,7 +124,7 @@ function renderStudentVideos() {
     list.innerHTML = '<div class="no-videos">Todavía no hay vídeos visibles para tus grupos.</div>';
     return;
   }
-  const visibleVideos = portalVideos.filter(video => !selectedGroup || video.group_id === selectedGroup);
+  const visibleVideos = portalVideos.filter(video => !selectedGroup || video.group_ids.includes(selectedGroup));
   if (!visibleVideos.length) {
     list.innerHTML = '<div class="no-videos">No hay vídeos visibles para este grupo.</div>';
     return;
@@ -119,12 +132,14 @@ function renderStudentVideos() {
   const groupNames = new Map(groups.map(group => [group.id, group.name]));
   const groupedVideos = new Map();
   visibleVideos.forEach(video => {
-    if (!groupedVideos.has(video.group_id)) groupedVideos.set(video.group_id, []);
-    groupedVideos.get(video.group_id).push(video);
+    const assignedGroups = video.group_ids.filter(groupId => groupNames.has(groupId)).sort();
+    const groupKey = assignedGroups.join('|');
+    if (!groupedVideos.has(groupKey)) groupedVideos.set(groupKey, { groupIds: assignedGroups, videos: [] });
+    groupedVideos.get(groupKey).videos.push(video);
   });
-  list.innerHTML = [...groupedVideos.entries()].map(([groupId, videos]) => `
+  list.innerHTML = [...groupedVideos.values()].map(({ groupIds, videos }) => `
     <section>
-      <h3 class="group-heading">${escapeHtml(groupNames.get(groupId) || 'Grupo')}</h3>
+      <h3 class="group-heading">${escapeHtml(groupIds.map(groupId => groupNames.get(groupId)).join(', ') || 'Grupo')}</h3>
       ${videos.map(video => renderStudentVideo(video)).join('')}
     </section>`).join('');
 }

@@ -183,8 +183,9 @@
           <form id="video-form">
             <input id="video-id" type="hidden" />
             <div class="form-group">
-              <label for="video-group">Grupo *</label>
-              <select id="video-group" required></select>
+              <label for="video-groups">Grupos *</label>
+              <select id="video-groups" multiple size="4" required></select>
+              <p class="form-hint">Puedes asignar el vídeo a varios grupos. Mantén pulsado Ctrl (o Cmd) para seleccionar varios.</p>
             </div>
             <div class="form-group">
               <label for="video-date">Fecha de la clase *</label>
@@ -833,7 +834,7 @@
   <script src="js/dashboard.js?v=20261021"></script>
   <script src="js/receipts.js?v=20261116-2"></script>
   <script src="js/reports.js?v=20261109"></script>
-  <script src="js/videos.js?v=20261126-5"></script>
+  <script src="js/videos.js?v=20261126-6"></script>
   <script src="js/main.js?v=20261126-3"></script>
 </body>
 </html>

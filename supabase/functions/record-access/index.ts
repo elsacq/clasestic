@@ -61,10 +61,19 @@ Deno.serve(async (request: Request) => {
   if (videoResult.error) return jsonResponse({ error: videoResult.error.message }, 500);
   const video = videoResult.data;
   if (!video || !video.visible) return jsonResponse({ error: "El vídeo no está disponible." }, 404);
-  const membership = await service.from("portal_student_groups")
-    .select("student_id").eq("student_id", profile.data.student_id).eq("group_id", video.group_id).maybeSingle();
-  if (membership.error) return jsonResponse({ error: membership.error.message }, 500);
-  if (!membership.data) return jsonResponse({ error: "No tienes acceso a este grupo." }, 403);
+  const [videoGroups, studentGroups, enabledGroups] = await Promise.all([
+    service.from("portal_video_groups").select("group_id").eq("video_id", videoId),
+    service.from("portal_student_groups").select("group_id").eq("student_id", profile.data.student_id),
+    service.from("portal_groups").select("id").eq("enabled", true),
+  ]);
+  const groupError = videoGroups.error || studentGroups.error || enabledGroups.error;
+  if (groupError) return jsonResponse({ error: groupError.message }, 500);
+  const studentGroupIds = new Set((studentGroups.data || []).map(group => group.group_id));
+  const enabledGroupIds = new Set((enabledGroups.data || []).map(group => group.id));
+  const hasAccess = (videoGroups.data || []).some(group =>
+    studentGroupIds.has(group.group_id) && enabledGroupIds.has(group.group_id)
+  );
+  if (!hasAccess) return jsonResponse({ error: "No tienes acceso a los grupos asignados a este vídeo." }, 403);
 
   const secretResult = await service.from("portal_video_secrets")
     .select("video_url,video_password,exercise_path").eq("video_id", videoId).maybeSingle();

@@ -16,11 +16,12 @@ El portal separa la aplicación privada de gestión (datos locales y copia cifra
 
    Esta clave es pública y está limitada por las políticas RLS de la base de datos. **No pongas la `service_role` key en `config.js`, HTML, JavaScript del navegador ni en GitHub.**
 3. En **SQL Editor**, ejecuta el contenido de `supabase/migrations/202611250001_portal.sql`.
-4. En **Authentication → Sign In / Providers**, habilita Google. Configura el OAuth Client ID y Client Secret en el panel de Supabase; no los incluyas en el repositorio. En Google Cloud, configura como callback URL la dirección que muestra Supabase en la configuración del proveedor.
-5. En **Authentication → URL Configuration**, configura:
+4. Después, ejecuta `supabase/migrations/202611260001_video_multiple_groups.sql`. Crea la relación de vídeos con varios grupos y conserva las asignaciones existentes. Si el portal ya estaba instalado, no vuelvas a ejecutar la migración inicial.
+5. En **Authentication → Sign In / Providers**, habilita Google. Configura el OAuth Client ID y Client Secret en el panel de Supabase; no los incluyas en el repositorio. En Google Cloud, configura como callback URL la dirección que muestra Supabase en la configuración del proveedor.
+6. En **Authentication → URL Configuration**, configura:
    - Site URL: `https://elsacq.github.io/clasestic/`
    - Redirect URLs: `https://elsacq.github.io/clasestic/` y `https://elsacq.github.io/clasestic/portal/`
-6. Despliega las Edge Functions desde una terminal con Supabase CLI:
+7. Despliega las Edge Functions desde una terminal con Supabase CLI:
 
    ```text
    supabase login
@@ -31,6 +32,7 @@ El portal separa la aplicación privada de gestión (datos locales y copia cifra
    ```
 
    Las funciones usan las variables de entorno que Supabase proporciona a Edge Functions, incluida `SUPABASE_SERVICE_ROLE_KEY`. Esa clave solo se usa en servidor.
+   Si ya tenías desplegada `record-access`, vuelve a desplegarla después de aplicar la migración para que compruebe el acceso a través de todos los grupos del vídeo.
 
 ## 2. Publicar en GitHub Pages
 
@@ -56,7 +58,7 @@ El portal separa la aplicación privada de gestión (datos locales y copia cifra
 
 1. En la aplicación de gestión, edita cada alumno e introduce en **Correo de Google para el portal de vídeos** el correo exacto de la cuenta Google que usará. El teléfono sigue siendo un dato de contacto y no se utiliza para iniciar sesión.
 2. Asigna los alumnos a sus grupos habituales y pulsa **Sincronizar correos y grupos** en la pestaña **Vídeos**. La sincronización actualiza el catálogo de grupos y desactiva accesos de alumnos/grupos eliminados o inactivos.
-3. Añade vídeos seleccionando grupo, fecha, título, enlace HTTPS, contraseña opcional, Excel opcional y visibilidad.
+3. Añade vídeos seleccionando uno o varios grupos, fecha, título, enlace HTTPS, contraseña opcional, Excel opcional y visibilidad.
 4. Envía a los alumnos `https://elsacq.github.io/clasestic/portal/`. Inician sesión con Google; el correo debe coincidir con el de su ficha. Solo reciben vídeos de sus grupos activos.
 5. Los alumnos pueden abrir vídeos, descargar los Excel y entregar ejercicios `.xls`/`.xlsx` (máximo 25 MB). Desde **Vídeos → Ejercicios entregados**, descarga sus archivos y guarda una nota de 0 a 10 y comentarios. Los alumnos ven esas correcciones en el portal.
 6. **Actividad de alumnos** muestra hasta los últimos 100 eventos: clic en el botón de vídeo y descargas de Excel o entregas. El clic confirma que pulsaron el enlace, no que hayan visto el vídeo completo.

@@ -103,33 +103,40 @@ async function portalFunctionErrorMessage(error) {
 
 async function loadAdminVideos() {
   const client = getPortalClient();
-  const [groupsResult, videosResult, secretsResult, submissionsResult, activityResult] = await Promise.all([
+  const [groupsResult, videosResult, videoGroupsResult, secretsResult, submissionsResult, activityResult] = await Promise.all([
     client.from('portal_groups').select('id,name,enabled').order('name'),
     client.from('portal_videos').select('*').order('class_date', { ascending: false }),
+    client.from('portal_video_groups').select('video_id,group_id'),
     client.from('portal_video_secrets').select('*'),
     client.from('student_submissions').select('*').order('uploaded_at', { ascending: false }),
     client.from('portal_access_logs').select('*').order('created_at', { ascending: false }).limit(100),
   ]);
-  const error = groupsResult.error || videosResult.error || secretsResult.error || submissionsResult.error || activityResult.error;
+  const error = groupsResult.error || videosResult.error || videoGroupsResult.error || secretsResult.error || submissionsResult.error || activityResult.error;
   if (error) throw error;
 
   const groups = groupsResult.data || [];
   const secretsByVideo = new Map((secretsResult.data || []).map(secret => [secret.video_id, secret]));
+  const groupIdsByVideo = new Map();
+  (videoGroupsResult.data || []).forEach(({ video_id: videoId, group_id: groupId }) => {
+    if (!groupIdsByVideo.has(videoId)) groupIdsByVideo.set(videoId, []);
+    groupIdsByVideo.get(videoId).push(groupId);
+  });
   portalVideos = (videosResult.data || []).map(video => {
     const secret = secretsByVideo.get(video.id);
     return {
       ...video,
       ...secret,
+      group_ids: groupIdsByVideo.get(video.id) || [video.group_id],
       updated_at: video.updated_at,
       secret_updated_at: secret?.updated_at,
     };
   });
-  const groupSelect = document.getElementById('video-group');
-  const selectedGroup = groupSelect.value;
+  const groupSelect = document.getElementById('video-groups');
+  const selectedGroups = new Set(Array.from(groupSelect.selectedOptions, option => option.value));
   const editingVideo = portalVideos.find(video => video.id === document.getElementById('video-id').value);
-  const availableGroups = groups.filter(group => group.enabled || group.id === editingVideo?.group_id);
+  const availableGroups = groups.filter(group => group.enabled || editingVideo?.group_ids.includes(group.id));
   groupSelect.innerHTML = availableGroups.length
-    ? availableGroups.map(group => `<option value="${window.App.escHtml(group.id)}" ${group.id === selectedGroup ? 'selected' : ''} ${group.enabled ? '' : 'disabled'}>${window.App.escHtml(group.name)}${group.enabled ? '' : ' (inactivo)'}</option>`).join('')
+    ? availableGroups.map(group => `<option value="${window.App.escHtml(group.id)}" ${selectedGroups.has(group.id) || (!selectedGroups.size && editingVideo?.group_ids.includes(group.id)) ? 'selected' : ''} ${group.enabled ? '' : 'disabled'}>${window.App.escHtml(group.name)}${group.enabled ? '' : ' (inactivo)'}</option>`).join('')
     : '<option value="">Sin grupos sincronizados</option>';
 
   renderAdminVideos(portalVideos, groups);
@@ -153,9 +160,10 @@ function renderPortalActivity(events, groups) {
   };
   list.innerHTML = `<div class="portal-activity-list">${events.map(event => {
     const video = videos.get(event.video_id);
+    const videoGroups = (video?.group_ids || []).map(id => groupNames.get(id)).filter(Boolean).join(', ');
     return `<div class="portal-activity-row">
       <strong>${window.App.escHtml(students.get(event.student_id)?.name || 'Alumno no encontrado')}</strong>
-      <span>${window.App.escHtml(labels[event.event_type] || event.event_type)} · ${window.App.escHtml(video?.title || 'Vídeo eliminado')} · ${window.App.escHtml(groupNames.get(video?.group_id) || '')}</span>
+      <span>${window.App.escHtml(labels[event.event_type] || event.event_type)} · ${window.App.escHtml(video?.title || 'Vídeo eliminado')} · ${window.App.escHtml(videoGroups)}</span>
       <time datetime="${window.App.escHtml(event.created_at)}">${new Date(event.created_at).toLocaleString('es-ES')}</time>
     </div>`;
   }).join('')}</div>`;
@@ -172,7 +180,7 @@ function renderAdminVideos(videos, groups) {
     <article class="card video-admin-card">
       <div>
         <h3>${window.App.escHtml(video.title)}</h3>
-        <p class="form-hint">${window.App.escHtml(groupNames.get(video.group_id) || 'Grupo eliminado')} · ${window.App.fmtDate(video.class_date)} · ${video.visible ? 'Visible' : 'Oculto'}</p>
+        <p class="form-hint">${window.App.escHtml(video.group_ids.map(id => groupNames.get(id) || 'Grupo eliminado').join(', '))} · ${window.App.fmtDate(video.class_date)} · ${video.visible ? 'Visible' : 'Oculto'}</p>
         ${video.has_exercise ? `<p class="form-hint">Excel: ${window.App.escHtml(video.exercise_filename || '')}</p>` : ''}
       </div>
       <div class="video-admin-actions">
@@ -198,7 +206,7 @@ function renderVideoSubmissions(submissions, groups) {
       <form class="card video-submission-card" data-grade-submission="${window.App.escHtml(submission.id)}">
         <div class="video-submission-heading">
           <strong>${window.App.escHtml(student?.name || 'Alumno no encontrado')}</strong>
-          <span>${window.App.escHtml(video?.title || 'Vídeo eliminado')} · ${window.App.escHtml(groupNames.get(video?.group_id) || '')}</span>
+          <span>${window.App.escHtml(video?.title || 'Vídeo eliminado')} · ${window.App.escHtml((video?.group_ids || []).map(id => groupNames.get(id) || 'Grupo eliminado').join(', '))}</span>
           <small>${window.App.fmtDate(submission.uploaded_at?.slice(0, 10) || '')} · ${window.App.escHtml(submission.file_name)}</small>
         </div>
         <div class="video-admin-actions">
@@ -263,7 +271,9 @@ function editVideo(videoId) {
   const video = portalVideos.find(item => item.id === videoId);
   if (!video) return;
   document.getElementById('video-id').value = video.id;
-  document.getElementById('video-group').value = video.group_id;
+  Array.from(document.getElementById('video-groups').options).forEach(option => {
+    option.selected = video.group_ids.includes(option.value);
+  });
   document.getElementById('video-date').value = video.class_date;
   document.getElementById('video-title').value = video.title;
   document.getElementById('video-url').value = video.video_url;
@@ -312,6 +322,10 @@ async function restoreVideoSave(client, videoId, previous) {
         updated_at: previous.secret_updated_at || previous.updated_at,
       })
       : client.from('portal_video_secrets').delete().eq('video_id', previous.id),
+    client.rpc('portal_set_video_groups', {
+      target_video_id: previous.id,
+      target_group_ids: previous.group_ids,
+    }),
   ]);
   return results.filter(result => result.error).map(result => result.error);
 }
@@ -332,6 +346,11 @@ async function saveVideo(event) {
   }
   if (file && (!/\.(xlsx|xls)$/i.test(file.name) || file.size > MAX_EXERCISE_SIZE)) {
     window.App.showToast('Adjunta un Excel .xls o .xlsx de hasta 25 MB', 'error');
+    return;
+  }
+  const groupIds = Array.from(document.getElementById('video-groups').selectedOptions, option => option.value);
+  if (!groupIds.length) {
+    window.App.showToast('Selecciona al menos un grupo para el vídeo', 'error');
     return;
   }
   const current = portalVideos.find(item => item.id === videoId);
@@ -355,7 +374,7 @@ async function saveVideo(event) {
 
   const record = {
     id: videoId,
-    group_id: document.getElementById('video-group').value,
+    group_id: groupIds[0],
     title: document.getElementById('video-title').value.trim(),
     class_date: document.getElementById('video-date').value,
     exercise_filename: exerciseFilename,
@@ -390,6 +409,22 @@ async function saveVideo(event) {
       ? ` No se pudo restaurar el vídeo anterior: ${rollbackErrors.map(portalErrorMessage).join('; ')}`
       : '';
     window.App.showToast(`No se pudo guardar el enlace seguro del vídeo: ${portalErrorMessage(secretResult.error)}${rollbackMessage}`, 'error');
+    return;
+  }
+  const groupResult = await client.rpc('portal_set_video_groups', {
+    target_video_id: videoId,
+    target_group_ids: groupIds,
+  });
+  if (groupResult.error) {
+    if (uploadedPath) {
+      const cleanup = await client.storage.from(PORTAL_BUCKET).remove([uploadedPath]);
+      if (cleanup.error) console.error('No se pudo limpiar el Excel subido tras fallar la asignación de grupos:', cleanup.error);
+    }
+    const rollbackErrors = await restoreVideoSave(client, videoId, current);
+    const rollbackMessage = rollbackErrors.length
+      ? ` No se pudo restaurar el vídeo anterior: ${rollbackErrors.map(portalErrorMessage).join('; ')}`
+      : '';
+    window.App.showToast(`No se pudieron asignar los grupos: ${portalErrorMessage(groupResult.error)}${rollbackMessage}`, 'error');
     return;
   }
   const visible = document.getElementById('video-visible').checked;
