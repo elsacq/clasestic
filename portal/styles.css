@@ -55,6 +55,7 @@ select, input[type="file"] { width: 100%; padding: 10px; border: 1px solid #d1d5
 .button:disabled { opacity: .55; cursor: not-allowed; }
 .message { padding: 10px 12px; border-radius: 8px; color: #374151; background: #eff6ff; }
 .message.error { color: #991b1b; background: #fef2f2; }
+.preview-notice { padding: 10px 12px; border-radius: 8px; color: #3730a3; background: #eef2ff; line-height: 1.5; }
 .group-heading { margin: 24px 0 10px; color: #374151; font-size: 1.05rem; }
 .video-card { padding: 16px; }
 .video-card h4 { margin: 0 0 6px; font-size: 1rem; }

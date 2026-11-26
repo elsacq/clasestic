@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <title>Vídeos y ejercicios · Academia TIC</title>
-  <link rel="stylesheet" href="styles.css?v=20261125" />
+  <link rel="stylesheet" href="styles.css?v=20261126-1" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=20261125"></script>
 </head>
@@ -15,6 +15,7 @@
       <p class="eyebrow">Academia TIC</p>
       <h1>Vídeos y ejercicios</h1>
     </div>
+    <a id="btn-return-admin" class="button secondary hidden" href="../">Volver a gestión</a>
     <button id="btn-portal-logout" class="button secondary hidden" type="button">Cerrar sesión</button>
   </header>
   <main class="portal-main">
@@ -28,7 +29,13 @@
       <button id="btn-google-login" class="button primary" type="button">Continuar con Google</button>
       <p id="portal-login-message" class="message hidden" role="alert"></p>
     </section>
+    <section id="portal-preview-denied" class="panel hidden" role="alert">
+      <h2>Vista previa solo para administración</h2>
+      <p>Abre esta vista desde la aplicación de gestión después de iniciar sesión con una cuenta administradora.</p>
+      <a class="button secondary" href="../">Volver a gestión</a>
+    </section>
     <section id="portal-content" class="hidden">
+      <p id="portal-preview-notice" class="preview-notice hidden">Vista previa de administración: estás viendo el portal como alumno de este grupo. No se mostrarán ni se enviarán entregas.</p>
       <div class="welcome-row">
         <div>
           <h2 id="portal-welcome">Tus clases</h2>
@@ -44,6 +51,6 @@
       <div id="portal-video-list"></div>
     </section>
   </main>
-  <script src="app.js?v=20261126-4"></script>
+  <script src="app.js?v=20261126-5"></script>
 </body>
 </html>

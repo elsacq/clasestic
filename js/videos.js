@@ -115,6 +115,16 @@ async function loadAdminVideos() {
   if (error) throw error;
 
   const groups = groupsResult.data || [];
+  const previewGroupSelect = document.getElementById('portal-preview-group');
+  const selectedPreviewGroup = previewGroupSelect.value;
+  const activeGroups = groups.filter(group => group.enabled);
+  previewGroupSelect.innerHTML = activeGroups.length
+    ? activeGroups.map(group => `<option value="${window.App.escHtml(group.id)}">${window.App.escHtml(group.name)}</option>`).join('')
+    : '<option value="">No hay grupos activos</option>';
+  if (activeGroups.some(group => group.id === selectedPreviewGroup)) {
+    previewGroupSelect.value = selectedPreviewGroup;
+  }
+  document.getElementById('btn-open-portal-preview').disabled = activeGroups.length === 0;
   const secretsByVideo = new Map((secretsResult.data || []).map(secret => [secret.video_id, secret]));
   const groupIdsByVideo = new Map();
   (videoGroupsResult.data || []).forEach(({ video_id: videoId, group_id: groupId }) => {
@@ -653,6 +663,16 @@ window.App.initVideoEvents = function() {
     } catch (error) {
       window.App.showToast(`No se pudo actualizar la actividad: ${portalErrorMessage(error)}`, 'error');
     }
+  });
+  document.getElementById('btn-open-portal-preview').addEventListener('click', () => {
+    const groupId = document.getElementById('portal-preview-group').value;
+    if (!groupId) {
+      window.App.showToast('Selecciona un grupo para abrir la vista previa', 'error');
+      return;
+    }
+    const previewUrl = new URL('portal/index.html', window.location.href);
+    previewUrl.searchParams.set('preview_group', groupId);
+    window.open(previewUrl.href, '_blank', 'noopener');
   });
   document.getElementById('btn-videos-admin-logout').addEventListener('click', async () => {
     const { error } = await client.auth.signOut();

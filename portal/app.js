@@ -10,6 +10,7 @@ let currentStudent = null;
 let portalGroups = [];
 let portalVideos = [];
 let portalSubmissions = [];
+let isAdminPreview = false;
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -50,8 +51,10 @@ function safeFileName(value) {
 function setPortalState(state) {
   document.getElementById('portal-config-error').classList.toggle('hidden', state !== 'config');
   document.getElementById('portal-login').classList.toggle('hidden', state !== 'login');
+  document.getElementById('portal-preview-denied').classList.toggle('hidden', state !== 'denied');
   document.getElementById('portal-content').classList.toggle('hidden', state !== 'content');
-  document.getElementById('btn-portal-logout').classList.toggle('hidden', state !== 'content');
+  document.getElementById('btn-portal-logout').classList.toggle('hidden', state !== 'content' || isAdminPreview);
+  document.getElementById('btn-return-admin').classList.toggle('hidden', state !== 'content' || !isAdminPreview);
 }
 
 async function loginWithGoogle() {
@@ -72,26 +75,35 @@ async function linkStudentProfile() {
   currentStudent = data;
 }
 
-async function loadStudentContent() {
+async function loadStudentContent(previewGroupId = '') {
+  const isPreview = Boolean(previewGroupId);
   const [groupsResult, videosResult, submissionsResult] = await Promise.all([
-    client.from('portal_groups').select('id,name').order('name'),
+    client.from('portal_groups').select('id,name,enabled').order('name'),
     client.from('portal_videos')
       .select('id,group_id,title,class_date,has_exercise,exercise_filename')
       .eq('visible', true)
       .order('class_date', { ascending: false }),
-    client.from('student_submissions')
-      .select('id,video_id,file_name,uploaded_at,grade,feedback')
-      .order('uploaded_at', { ascending: false }),
+    isPreview
+      ? Promise.resolve({ data: [], error: null })
+      : client.from('student_submissions')
+        .select('id,video_id,file_name,uploaded_at,grade,feedback')
+        .order('uploaded_at', { ascending: false }),
   ]);
   const error = groupsResult.error || videosResult.error || submissionsResult.error;
   if (error) throw error;
 
-  portalGroups = groupsResult.data || [];
+  portalGroups = (groupsResult.data || []).filter(group => !isPreview || group.enabled);
   const videoIds = (videosResult.data || []).map(video => video.id);
   const videoGroupsResult = videoIds.length
     ? await client.from('portal_video_groups').select('video_id,group_id').in('video_id', videoIds)
     : { data: [], error: null };
   if (videoGroupsResult.error) throw videoGroupsResult.error;
+  const secretsResult = isPreview && videoIds.length
+    ? await client.from('portal_video_secrets')
+      .select('video_id,video_url,video_password,exercise_path').in('video_id', videoIds)
+    : { data: [], error: null };
+  if (secretsResult.error) throw secretsResult.error;
+  const secretsByVideo = new Map((secretsResult.data || []).map(secret => [secret.video_id, secret]));
   const groupIdsByVideo = new Map();
   (videoGroupsResult.data || []).forEach(({ video_id: videoId, group_id: groupId }) => {
     if (!groupIdsByVideo.has(videoId)) groupIdsByVideo.set(videoId, []);
@@ -99,6 +111,7 @@ async function loadStudentContent() {
   });
   portalVideos = (videosResult.data || []).map(video => ({
     ...video,
+    ...secretsByVideo.get(video.id),
     group_ids: groupIdsByVideo.get(video.id) || [video.group_id],
   }));
   portalSubmissions = submissionsResult.data || [];
@@ -106,10 +119,18 @@ async function loadStudentContent() {
     ? `Hola, ${currentStudent.name}`
     : 'Tus clases';
   const filter = document.getElementById('portal-group-filter');
-  const selectedGroup = filter.value;
+  const selectedGroup = isPreview ? previewGroupId : filter.value;
   filter.innerHTML = '<option value="">Todos mis grupos</option>' +
     portalGroups.map(group => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.name)}</option>`).join('');
+  if (isPreview && !portalGroups.some(group => group.id === previewGroupId)) {
+    throw new Error('El grupo seleccionado ya no está activo.');
+  }
   filter.value = portalGroups.some(group => group.id === selectedGroup) ? selectedGroup : '';
+  filter.disabled = false;
+  document.getElementById('portal-preview-notice').classList.toggle('hidden', !isPreview);
+  document.getElementById('portal-welcome').textContent = isPreview
+    ? `Vista previa: ${portalGroups.find(group => group.id === previewGroupId).name}`
+    : currentStudent?.name ? `Hola, ${currentStudent.name}` : 'Tus clases';
   renderStudentVideos();
   setMessage('portal-content-message', '');
 }
@@ -158,13 +179,13 @@ function renderStudentVideo(video) {
         <button class="button primary" type="button" data-open-video="${escapeHtml(video.id)}">Abrir vídeo</button>
         ${video.has_exercise ? `<button class="button secondary" type="button" data-download-exercise="${escapeHtml(video.id)}">Descargar ${escapeHtml(video.exercise_filename || 'Excel de ejercicios')}</button>` : ''}
       </div>
-      <form class="submission-form" data-submit-exercise="${escapeHtml(video.id)}">
+      ${isAdminPreview ? '' : `<form class="submission-form" data-submit-exercise="${escapeHtml(video.id)}">
         <label>Subir ejercicios terminados (.xls o .xlsx)
           <input type="file" name="exercise" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
         </label>
         <button class="button secondary" type="submit">Entregar</button>
-      </form>
-      ${submissions.length ? `<div class="submission-list"><strong>Tus entregas y correcciones</strong>${submissions.map(renderStudentSubmission).join('')}</div>` : ''}
+      </form>`}
+      ${!isAdminPreview && submissions.length ? `<div class="submission-list"><strong>Tus entregas y correcciones</strong>${submissions.map(renderStudentSubmission).join('')}</div>` : ''}
     </article>`;
 }
 
@@ -189,7 +210,10 @@ async function showVideoPassword(videoId, button) {
   button.disabled = true;
   button.textContent = 'Cargando código…';
   try {
-    const data = await callAccessFunction({ action: 'password', video_id: videoId });
+    const video = portalVideos.find(item => item.id === videoId);
+    const data = isAdminPreview
+      ? { password: video?.video_password || null }
+      : await callAccessFunction({ action: 'password', video_id: videoId });
     const card = document.querySelector(`[data-video-card="${CSS.escape(videoId)}"]`);
     const password = card?.querySelector('[data-video-password]');
     if (!password) throw new Error('No se pudo mostrar el código de acceso.');
@@ -207,6 +231,15 @@ async function showVideoPassword(videoId, button) {
 }
 
 async function openVideo(videoId) {
+  if (isAdminPreview) {
+    const video = portalVideos.find(item => item.id === videoId);
+    if (!video?.video_url) {
+      setMessage('portal-content-message', 'Este vídeo no tiene un enlace válido.', true);
+      return;
+    }
+    window.open(video.video_url, '_blank', 'noopener');
+    return;
+  }
   const popup = window.open('about:blank', '_blank');
   try {
     const data = await callAccessFunction({ action: 'video', video_id: videoId });
@@ -226,6 +259,21 @@ async function openVideo(videoId) {
 }
 
 async function downloadFile(action, id) {
+  if (isAdminPreview && action === 'exercise') {
+    const video = portalVideos.find(item => item.id === id);
+    if (!video?.exercise_path) {
+      setMessage('portal-content-message', 'Este vídeo no tiene un Excel adjunto.', true);
+      return;
+    }
+    const { data, error } = await client.storage.from(FILE_BUCKET)
+      .createSignedUrl(video.exercise_path, 300, { download: video.exercise_filename || 'ejercicios.xlsx' });
+    if (error) {
+      setMessage('portal-content-message', `No se pudo preparar la descarga: ${error.message}`, true);
+      return;
+    }
+    window.open(data.signedUrl, '_blank', 'noopener');
+    return;
+  }
   const popup = window.open('about:blank', '_blank');
   try {
     const data = await callAccessFunction(action === 'submission'
@@ -296,12 +344,32 @@ async function restorePortalSession() {
   await loadStudentContent();
 }
 
+async function restoreAdminPreview(groupId) {
+  const { data, error } = await client.auth.getSession();
+  if (error) throw error;
+  if (!data.session) {
+    setPortalState('denied');
+    return;
+  }
+  const adminResult = await client.rpc('portal_is_admin');
+  if (adminResult.error) throw adminResult.error;
+  if (adminResult.data !== true) {
+    setPortalState('denied');
+    return;
+  }
+  isAdminPreview = true;
+  document.body.classList.add('admin-preview');
+  setPortalState('content');
+  await loadStudentContent(groupId);
+}
+
 async function startPortal() {
   if (!client) {
     setPortalState('config');
     return;
   }
-  setPortalState('login');
+  const previewGroupId = new URLSearchParams(window.location.search).get('preview_group');
+  setPortalState(previewGroupId ? 'denied' : 'login');
   document.getElementById('btn-google-login').addEventListener('click', loginWithGoogle);
   document.getElementById('btn-portal-logout').addEventListener('click', async () => {
     const { error } = await client.auth.signOut();
@@ -326,10 +394,17 @@ async function startPortal() {
   });
   document.getElementById('portal-video-list').addEventListener('submit', submitExercise);
   try {
-    await restorePortalSession();
+    if (previewGroupId) await restoreAdminPreview(previewGroupId);
+    else await restorePortalSession();
   } catch (error) {
-    setPortalState('login');
-    setMessage('portal-login-message', error.message || 'No se pudo cargar el portal.', true);
+    if (previewGroupId) {
+      setPortalState('denied');
+      document.querySelector('#portal-preview-denied p').textContent =
+        `No se pudo cargar la vista previa: ${error.message || 'error desconocido'}`;
+    } else {
+      setPortalState('login');
+      setMessage('portal-login-message', error.message || 'No se pudo cargar el portal.', true);
+    }
   }
 }
 

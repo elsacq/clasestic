@@ -62,6 +62,7 @@ El portal separa la aplicación privada de gestión (datos locales y copia cifra
 4. Envía a los alumnos `https://elsacq.github.io/clasestic/portal/`. Inician sesión con Google; el correo debe coincidir con el de su ficha. Solo reciben vídeos de sus grupos activos.
 5. Los alumnos pueden abrir vídeos, descargar los Excel y entregar ejercicios `.xls`/`.xlsx` (máximo 25 MB). Desde **Vídeos → Ejercicios entregados**, descarga sus archivos y guarda una nota de 0 a 10 y comentarios. Los alumnos ven esas correcciones en el portal.
 6. **Actividad de alumnos** muestra hasta los últimos 100 eventos: clic en el botón de vídeo y descargas de Excel o entregas. El clic confirma que pulsaron el enlace, no que hayan visto el vídeo completo.
+7. Para probar el portal sin iniciar sesión como alumno, abre **Vídeos → Vista previa del portal de alumnos**, elige un grupo y pulsa **Ver portal como alumno**. Requiere que la sesión de administración esté iniciada en la aplicación de gestión; la vista previa no permite enviar entregas ni ver las entregas de alumnos.
 
 Las contraseñas de los vídeos solo se entregan a usuarios autenticados del grupo correspondiente. Las contraseñas de las cuentas Google las gestiona cada alumno con Google; la academia no puede restablecerlas. Si cambia un correo Google, actualízalo en la ficha y vuelve a sincronizar.
 
