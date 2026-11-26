@@ -150,7 +150,10 @@ function renderStudentVideo(video) {
     <article class="video-card" data-video-card="${escapeHtml(video.id)}">
       <div class="video-date">${fileDate(video.class_date)}</div>
       <h4>${escapeHtml(video.title)}</h4>
-      <div class="video-meta hidden" data-video-password="${escapeHtml(video.id)}"></div>
+      <div class="video-meta">
+        <button class="button secondary" type="button" data-show-password="${escapeHtml(video.id)}">Mostrar código de acceso</button>
+        <span class="video-password hidden" data-video-password="${escapeHtml(video.id)}"></span>
+      </div>
       <div class="video-actions">
         <button class="button primary" type="button" data-open-video="${escapeHtml(video.id)}">Abrir vídeo</button>
         ${video.has_exercise ? `<button class="button secondary" type="button" data-download-exercise="${escapeHtml(video.id)}">Descargar ${escapeHtml(video.exercise_filename || 'Excel de ejercicios')}</button>` : ''}
@@ -180,6 +183,27 @@ async function callAccessFunction(body) {
   const { data, error } = await client.functions.invoke('record-access', { body });
   if (error) throw new Error(await functionErrorMessage(error));
   return data;
+}
+
+async function showVideoPassword(videoId, button) {
+  button.disabled = true;
+  button.textContent = 'Cargando código…';
+  try {
+    const data = await callAccessFunction({ action: 'password', video_id: videoId });
+    const card = document.querySelector(`[data-video-card="${CSS.escape(videoId)}"]`);
+    const password = card?.querySelector('[data-video-password]');
+    if (!password) throw new Error('No se pudo mostrar el código de acceso.');
+    password.textContent = data.password
+      ? `Código de acceso: ${data.password}`
+      : 'Este vídeo no tiene contraseña.';
+    password.classList.remove('hidden');
+    button.textContent = 'Código de acceso';
+  } catch (error) {
+    button.textContent = 'Mostrar código de acceso';
+    setMessage('portal-content-message', error.message, true);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function openVideo(videoId) {
@@ -291,9 +315,11 @@ async function startPortal() {
   });
   document.getElementById('portal-group-filter').addEventListener('change', renderStudentVideos);
   document.getElementById('portal-video-list').addEventListener('click', event => {
+    const passwordButton = event.target.closest('[data-show-password]');
     const openButton = event.target.closest('[data-open-video]');
     const exerciseButton = event.target.closest('[data-download-exercise]');
     const submissionButton = event.target.closest('[data-download-submission]');
+    if (passwordButton) showVideoPassword(passwordButton.dataset.showPassword, passwordButton);
     if (openButton) openVideo(openButton.dataset.openVideo);
     if (exerciseButton) downloadFile('exercise', exerciseButton.dataset.downloadExercise);
     if (submissionButton) downloadFile('submission', submissionButton.dataset.downloadSubmission);

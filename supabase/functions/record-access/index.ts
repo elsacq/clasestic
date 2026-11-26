@@ -48,8 +48,8 @@ Deno.serve(async (request: Request) => {
     filePath = submission.data.file_path;
     fileName = submission.data.file_name;
     eventType = "submission_downloaded";
-  } else if (action === "video" || action === "exercise") {
-    eventType = action === "video" ? "video_clicked" : "exercise_downloaded";
+  } else if (action === "video" || action === "exercise" || action === "password") {
+    eventType = action === "exercise" ? "exercise_downloaded" : "video_clicked";
   } else {
     return jsonResponse({ error: "Acción de acceso no válida." }, 400);
   }
@@ -80,6 +80,7 @@ Deno.serve(async (request: Request) => {
   if (secretResult.error) return jsonResponse({ error: secretResult.error.message }, 500);
   if (!secretResult.data) return jsonResponse({ error: "Los datos del vídeo no están disponibles." }, 404);
   const secret = secretResult.data;
+  if (action === "password") return jsonResponse({ password: secret.video_password });
   if (action === "exercise") {
     if (!video.has_exercise || !secret.exercise_path) {
       return jsonResponse({ error: "Este vídeo no tiene un Excel adjunto." }, 404);
