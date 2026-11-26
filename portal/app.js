@@ -24,6 +24,20 @@ function setMessage(elementId, text, isError = false) {
   element.classList.toggle('hidden', !text);
 }
 
+async function functionErrorMessage(error) {
+  const response = error?.context;
+  if (!(response instanceof Response)) return error?.message || 'No se pudo completar la operación.';
+
+  try {
+    const body = await response.clone().json();
+    if (typeof body?.error === 'string') return body.error;
+    if (typeof body?.message === 'string') return body.message;
+  } catch {
+    // Some gateway errors are not returned as JSON.
+  }
+  return `${error?.message || 'La función de Supabase devolvió un error.'} (HTTP ${response.status})`;
+}
+
 function fileDate(value) {
   if (!value) return '';
   return new Date(`${value}T12:00:00`).toLocaleDateString('es-ES');
@@ -54,7 +68,7 @@ async function loginWithGoogle() {
 
 async function linkStudentProfile() {
   const { data, error } = await client.functions.invoke('link-student');
-  if (error) throw new Error(error.message || 'No se pudo asociar la cuenta con el alumno.');
+  if (error) throw new Error(await functionErrorMessage(error));
   currentStudent = data;
 }
 
@@ -149,7 +163,7 @@ function renderStudentSubmission(submission) {
 
 async function callAccessFunction(body) {
   const { data, error } = await client.functions.invoke('record-access', { body });
-  if (error) throw new Error(error.message || 'No se pudo registrar el acceso.');
+  if (error) throw new Error(await functionErrorMessage(error));
   return data;
 }
 

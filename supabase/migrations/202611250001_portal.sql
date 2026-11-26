@@ -262,3 +262,14 @@ grant select, insert, update, delete on public.portal_video_secrets to authentic
 grant select, insert, update, delete on public.student_submissions to authenticated;
 grant select on public.portal_access_logs to authenticated;
 grant usage, select on sequence public.portal_access_logs_id_seq to authenticated;
+
+grant all on public.portal_admins to service_role;
+grant all on public.portal_students to service_role;
+grant all on public.portal_groups to service_role;
+grant all on public.portal_student_groups to service_role;
+grant all on public.portal_profiles to service_role;
+grant all on public.portal_videos to service_role;
+grant all on public.portal_video_secrets to service_role;
+grant all on public.student_submissions to service_role;
+grant all on public.portal_access_logs to service_role;
+grant usage, select on sequence public.portal_access_logs_id_seq to service_role;
