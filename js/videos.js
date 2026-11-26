@@ -64,11 +64,26 @@ async function completeAdminOAuthCallback(client) {
   }
 
   const code = url.searchParams.get('code');
-  if (!code) return;
-  const { error } = await client.auth.exchangeCodeForSession(code);
-  clearAdminOAuthCallbackParams(url);
-  if (error) {
-    throw new Error(`Supabase no pudo validar el retorno de Google: ${error.message}`);
+  if (code) {
+    const { error } = await client.auth.exchangeCodeForSession(code);
+    clearAdminOAuthCallbackParams(url);
+    if (error) {
+      throw new Error(`Supabase no pudo validar el retorno de Google: ${error.message}`);
+    }
+    return;
+  }
+
+  const accessToken = hashParams.get('access_token');
+  const refreshToken = hashParams.get('refresh_token');
+  if (accessToken && refreshToken) {
+    const { error } = await client.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    clearAdminOAuthCallbackParams(url);
+    if (error) {
+      throw new Error(`Supabase no pudo guardar la sesión de Google: ${error.message}`);
+    }
   }
 }
 
@@ -538,7 +553,7 @@ async function restoreVideoAdminSession() {
         'videos-admin-login-error',
         oauthError
           ? `Google no pudo completar el acceso: ${oauthError}`
-          : 'Google ha devuelto a la aplicación, pero Supabase no recuperó la sesión. Comprueba que el navegador permita el almacenamiento del sitio y vuelve a iniciar sesión.',
+          : 'El retorno de Google no incluye un código ni una sesión. Revisa en Supabase → Authentication → URL Configuration que la URL de GitHub Pages esté en Redirect URLs y en la configuración de Google que la callback sea la de este proyecto.',
         true,
       );
       sessionStorage.removeItem('clasestic-oauth-return-tab');
