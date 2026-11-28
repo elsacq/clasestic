@@ -664,6 +664,22 @@ window.App.initVideoEvents = function() {
       window.App.showToast(`No se pudo actualizar la actividad: ${portalErrorMessage(error)}`, 'error');
     }
   });
+  document.getElementById('btn-test-submission-email').addEventListener('click', async event => {
+    const button = event.currentTarget;
+    const status = document.getElementById('submission-email-test-status');
+    button.disabled = true;
+    status.textContent = 'Enviando email de prueba…';
+    try {
+      const { error } = await client.functions.invoke('notify-submission', { body: { action: 'test' } });
+      if (error) throw new Error(await portalFunctionErrorMessage(error));
+      status.textContent = 'Email de prueba enviado. Comprueba la bandeja de entrada y la carpeta de spam.';
+    } catch (error) {
+      status.textContent = `No se pudo enviar el email de prueba: ${portalErrorMessage(error)}`;
+      window.App.showToast(status.textContent, 'error');
+    } finally {
+      button.disabled = false;
+    }
+  });
   document.getElementById('btn-open-portal-preview').addEventListener('click', () => {
     const groupId = document.getElementById('portal-preview-group').value;
     if (!groupId) {

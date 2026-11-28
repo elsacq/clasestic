@@ -309,7 +309,9 @@ async function submitExercise(event) {
     setMessage('portal-content-message', `No se pudo subir el ejercicio: ${upload.error.message}`, true);
     return;
   }
+  const submissionId = crypto.randomUUID();
   const inserted = await client.from('student_submissions').insert({
+    id: submissionId,
     video_id: videoId,
     student_id: currentStudent.student_id,
     file_path: filePath,
@@ -321,8 +323,19 @@ async function submitExercise(event) {
     setMessage('portal-content-message', `No se pudo registrar la entrega: ${inserted.error.message}`, true);
     return;
   }
+  const notification = await client.functions.invoke('notify-submission', {
+    body: { submission_id: submissionId },
+  });
   await loadStudentContent();
-  setMessage('portal-content-message', 'Ejercicio entregado correctamente.');
+  if (notification.error) {
+    setMessage(
+      'portal-content-message',
+      `Ejercicio entregado correctamente, pero no se pudo enviar el aviso por email: ${await functionErrorMessage(notification.error)}`,
+      true,
+    );
+    return;
+  }
+  setMessage('portal-content-message', 'Ejercicio entregado correctamente. Se ha enviado el aviso por email.');
 }
 
 async function restorePortalSession() {

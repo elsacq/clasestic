@@ -29,10 +29,20 @@ El portal separa la aplicación privada de gestión (datos locales y copia cifra
    supabase functions deploy manage-students
    supabase functions deploy link-student
    supabase functions deploy record-access
+   supabase functions deploy notify-submission
    ```
 
    Las funciones usan las variables de entorno que Supabase proporciona a Edge Functions, incluida `SUPABASE_SERVICE_ROLE_KEY`. Esa clave solo se usa en servidor.
    Si ya tenías desplegada `record-access`, vuelve a desplegarla después de aplicar la migración para que compruebe el acceso a través de todos los grupos del vídeo.
+8. Para los avisos de entregas, crea una cuenta gratuita en Resend, verifica tu correo y crea una API key. En Supabase configura estos secretos (sustituye los valores de ejemplo):
+
+   ```text
+   supabase secrets set RESEND_API_KEY=re_TU_API_KEY NOTIFICATION_EMAIL=tu-correo@ejemplo.com
+   supabase functions deploy notify-submission
+   ```
+
+   `NOTIFICATION_EMAIL` recibe un aviso cada vez que un alumno entrega un Excel y debe ser el correo verificado de tu cuenta de Resend si usas el remitente de prueba predeterminado (`Academia TIC <onboarding@resend.dev>`). No hace falta tener dominio propio para enviar avisos solo a ese correo. Para enviar a otros destinatarios, verifica un dominio en Resend y configura además `RESEND_FROM_EMAIL`, por ejemplo `Academia TIC <avisos@tu-dominio-verificado.es>`. El plan gratuito incluye 3.000 emails al mes y un máximo de 100 al día; consulta [sus límites actuales](https://resend.com/pricing). No guardes la API key en el repositorio ni en archivos del portal.
+9. Tras desplegar la función y publicar la aplicación de gestión, inicia sesión como administradora, abre **Vídeos → Ejercicios entregados** y pulsa **Enviar email de prueba**. Esto verifica el envío sin crear una entrega ficticia.
 
 ## 2. Publicar en GitHub Pages
 
@@ -60,7 +70,7 @@ El portal separa la aplicación privada de gestión (datos locales y copia cifra
 2. Asigna los alumnos a sus grupos habituales y pulsa **Sincronizar correos y grupos** en la pestaña **Vídeos**. La sincronización actualiza el catálogo de grupos y desactiva accesos de alumnos/grupos eliminados o inactivos.
 3. Añade vídeos seleccionando uno o varios grupos, fecha, título, enlace HTTPS, contraseña opcional, Excel opcional y visibilidad.
 4. Envía a los alumnos `https://elsacq.github.io/clasestic/portal/`. Inician sesión con Google; el correo debe coincidir con el de su ficha. Solo reciben vídeos de sus grupos activos.
-5. Los alumnos pueden abrir vídeos, descargar los Excel y entregar ejercicios `.xls`/`.xlsx` (máximo 25 MB). Desde **Vídeos → Ejercicios entregados**, descarga sus archivos y guarda una nota de 0 a 10 y comentarios. Los alumnos ven esas correcciones en el portal.
+5. Los alumnos pueden abrir vídeos, descargar los Excel y entregar ejercicios `.xls`/`.xlsx` (máximo 25 MB). Cada entrega envía un aviso por email a `NOTIFICATION_EMAIL`. Desde **Vídeos → Ejercicios entregados**, descarga sus archivos y guarda una nota de 0 a 10 y comentarios. Los alumnos ven esas correcciones en el portal.
 6. **Actividad de alumnos** muestra hasta los últimos 100 eventos: clic en el botón de vídeo y descargas de Excel o entregas. El clic confirma que pulsaron el enlace, no que hayan visto el vídeo completo.
 7. Para probar el portal sin iniciar sesión como alumno, abre **Vídeos → Vista previa del portal de alumnos**, elige un grupo y pulsa **Ver portal como alumno**. Requiere que la sesión de administración esté iniciada en la aplicación de gestión; la vista previa no permite enviar entregas ni ver las entregas de alumnos.
 
